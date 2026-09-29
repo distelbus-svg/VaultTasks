@@ -1,0 +1,481 @@
+{
+ "_comment": "Language-neutral fixtures shared with the macOS port. Edit cases compare whole-file text.",
+ "parseCases": [
+  {
+   "name": "time_before_signifiers",
+   "text": "- [ ] Call Anna ⏰ 19:00 🔼 📅 2026-09-28\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "Call Anna",
+     "due": "2026-09-28",
+     "time": "19:00",
+     "priority": "medium"
+    }
+   ]
+  },
+  {
+   "name": "date_only_no_trailing_newline",
+   "text": "- [ ] Pay rent 📅 2026-10-01",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "Pay rent",
+     "due": "2026-10-01"
+    }
+   ]
+  },
+  {
+   "name": "no_date",
+   "text": "- [ ] Buy milk\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "Buy milk"
+    }
+   ]
+  },
+  {
+   "name": "legacy_order_time_after_date",
+   "tasksBlind": true,
+   "text": "- [ ] Call Anna 📅 2026-09-28 ⏰ 19:00\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "Call Anna",
+     "due": "2026-09-28",
+     "time": "19:00"
+    }
+   ]
+  },
+  {
+   "name": "lone_alarm_is_plain_text",
+   "text": "- [ ] Wake up ⏰ 07:30\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "Wake up ⏰ 07:30"
+    }
+   ]
+  },
+  {
+   "name": "invalid_time_is_plain_text",
+   "text": "- [ ] X ⏰ 25:99 📅 2026-09-28\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "X ⏰ 25:99",
+     "due": "2026-09-28"
+    }
+   ]
+  },
+  {
+   "name": "invalid_date_is_no_due",
+   "text": "- [ ] X ⏰ 08:00 📅 2026-13-45\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "X ⏰ 08:00"
+    }
+   ]
+  },
+  {
+   "name": "states_and_custom_status",
+   "text": "- [x] Done one ✅ 2026-09-01\n- [X] Done two\n- [-] Cancelled ❌ 2026-09-02\n- [/] Custom status\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "Done one",
+     "state": "done",
+     "done": "2026-09-01"
+    },
+    {
+     "line": 1,
+     "description": "Done two",
+     "state": "done"
+    },
+    {
+     "line": 2,
+     "description": "Cancelled",
+     "state": "cancelled"
+    }
+   ]
+  },
+  {
+   "name": "bullets_nesting_blockquote",
+   "text": "* [ ] star\n+ [ ] plus\n1. [ ] numbered\n  - [ ] nested 📅 2026-09-28\n\t- [ ] tab nested\n> - [ ] quoted 📅 2026-09-29\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "star"
+    },
+    {
+     "line": 1,
+     "description": "plus"
+    },
+    {
+     "line": 2,
+     "description": "numbered"
+    },
+    {
+     "line": 3,
+     "description": "nested",
+     "due": "2026-09-28"
+    },
+    {
+     "line": 4,
+     "description": "tab nested"
+    },
+    {
+     "line": 5,
+     "description": "quoted",
+     "due": "2026-09-29"
+    }
+   ]
+  },
+  {
+   "name": "crlf_and_bom",
+   "text": "\ufeff- [ ] A\r\n- [ ] B 📅 2026-09-28\r\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "A"
+    },
+    {
+     "line": 1,
+     "description": "B",
+     "due": "2026-09-28"
+    }
+   ]
+  },
+  {
+   "name": "all_signifiers_preserved_and_read",
+   "text": "- [ ] Full 🆔 abc ⛔ def 🔺 🔁 every week 🏁 delete ➕ 2026-01-01 🛫 2026-01-02 ⏳ 2026-01-03 📅 2026-01-04 ❌ 2026-01-05 ✅ 2026-01-06\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "Full",
+     "due": "2026-01-04",
+     "priority": "highest",
+     "recurring": true,
+     "done": "2026-01-06"
+    }
+   ]
+  },
+  {
+   "name": "recurring_with_time",
+   "text": "- [ ] Gym ⏰ 18:00 🔁 every week 📅 2026-09-30\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "Gym",
+     "due": "2026-09-30",
+     "time": "18:00",
+     "recurring": true
+    }
+   ]
+  },
+  {
+   "name": "global_filter",
+   "globalFilter": "#task",
+   "text": "- [ ] #task Counted 📅 2026-09-28\n- [ ] Not counted\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "#task Counted",
+     "due": "2026-09-28"
+    }
+   ]
+  },
+  {
+   "name": "duplicate_identical_lines",
+   "text": "- [ ] Same\n- [ ] Same\n- [ ] Same 📅 2026-09-28\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "Same",
+     "occurrence": 0
+    },
+    {
+     "line": 1,
+     "description": "Same",
+     "occurrence": 1
+    },
+    {
+     "line": 2,
+     "description": "Same",
+     "due": "2026-09-28"
+    }
+   ]
+  },
+  {
+   "name": "empty_file",
+   "text": "",
+   "tasks": []
+  },
+  {
+   "name": "blank_description_is_not_a_task",
+   "text": "- [ ] \n- [ ]\n",
+   "tasks": []
+  },
+  {
+   "name": "fenced_code_ignored",
+   "text": "```\n- [ ] in code\n```\n- [ ] real\n",
+   "tasks": [
+    {
+     "line": 3,
+     "description": "real"
+    }
+   ]
+  },
+  {
+   "name": "variation_selectors_tolerated",
+   "text": "- [ ] Sel ⏰ 09:00 ⏫\ufe0f 📅\ufe0f 2026-09-28\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "Sel",
+     "due": "2026-09-28",
+     "time": "09:00",
+     "priority": "high"
+    }
+   ]
+  },
+  {
+   "name": "alias_due_emojis",
+   "text": "- [ ] A 📆 2026-09-01\n- [ ] B 🗓 2026-09-02\n- [ ] C 🗓\ufe0f 2026-09-03\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "A",
+     "due": "2026-09-01"
+    },
+    {
+     "line": 1,
+     "description": "B",
+     "due": "2026-09-02"
+    },
+    {
+     "line": 2,
+     "description": "C",
+     "due": "2026-09-03"
+    }
+   ]
+  },
+  {
+   "name": "alias_scheduled_emoji_stripped_from_description",
+   "text": "- [ ] A ⌛ 2026-09-01\n- [ ] B ⏳ 2026-09-02\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "A"
+    },
+    {
+     "line": 1,
+     "description": "B"
+    }
+   ]
+  },
+  {
+   "name": "low_and_lowest_priority",
+   "text": "- [ ] A 🔽\n- [ ] B ⏬\n- [ ] C 🔺\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "A",
+     "priority": "low"
+    },
+    {
+     "line": 1,
+     "description": "B",
+     "priority": "lowest"
+    },
+    {
+     "line": 2,
+     "description": "C",
+     "priority": "highest"
+    }
+   ]
+  },
+  {
+   "name": "paren_numbered_bullet",
+   "text": "1) [ ] paren\n2. [x] dot\n",
+   "tasks": [
+    {
+     "line": 0,
+     "description": "paren"
+    },
+    {
+     "line": 1,
+     "description": "dot",
+     "state": "done"
+    }
+   ]
+  }
+ ],
+ "editCases": [
+  {
+   "name": "add_date_and_time",
+   "text": "- [ ] Call Anna\n- [ ] Other\n",
+   "op": "setFields",
+   "line": 0,
+   "description": "Call Anna",
+   "due": "2026-09-28",
+   "time": "19:00",
+   "expected": "- [ ] Call Anna ⏰ 19:00 📅 2026-09-28\n- [ ] Other\n"
+  },
+  {
+   "name": "change_time_keeps_priority",
+   "text": "- [ ] Call Anna ⏰ 19:00 🔼 📅 2026-09-28\n",
+   "op": "setFields",
+   "line": 0,
+   "description": "Call Anna",
+   "due": "2026-09-28",
+   "time": "20:15",
+   "expected": "- [ ] Call Anna ⏰ 20:15 🔼 📅 2026-09-28\n"
+  },
+  {
+   "name": "remove_date_removes_time",
+   "text": "- [ ] Call Anna ⏰ 19:00 🔼 📅 2026-09-28\n",
+   "op": "setFields",
+   "line": 0,
+   "description": "Call Anna",
+   "due": null,
+   "time": "19:00",
+   "expected": "- [ ] Call Anna 🔼\n"
+  },
+  {
+   "name": "due_inserted_at_tasks_position",
+   "text": "- [x] X ⏳ 2026-09-01 ✅ 2026-09-02\n",
+   "op": "setFields",
+   "line": 0,
+   "description": "X",
+   "due": "2026-09-05",
+   "time": null,
+   "expected": "- [x] X ⏳ 2026-09-01 📅 2026-09-05 ✅ 2026-09-02\n"
+  },
+  {
+   "name": "legacy_line_rewritten_time_first",
+   "text": "- [ ] Call Anna 📅 2026-09-28 ⏰ 19:00\n",
+   "op": "setFields",
+   "line": 0,
+   "description": "Call Anna",
+   "due": "2026-09-28",
+   "time": "19:00",
+   "expected": "- [ ] Call Anna ⏰ 19:00 📅 2026-09-28\n"
+  },
+  {
+   "name": "text_edit_preserves_metadata_and_order",
+   "text": "- [ ] Old #tag ⏰ 08:00 ⏫ 📅 2026-09-28 🔁 every day\n",
+   "op": "setFields",
+   "line": 0,
+   "description": "New #tag",
+   "due": "2026-09-28",
+   "time": "08:00",
+   "expected": "- [ ] New #tag ⏰ 08:00 ⏫ 📅 2026-09-28 🔁 every day\n"
+  },
+  {
+   "name": "complete_appends_done_last",
+   "text": "- [ ] Task 📅 2026-09-28\n- [ ] B\n",
+   "op": "done",
+   "line": 0,
+   "doneDate": "2026-09-29",
+   "expected": "- [x] Task 📅 2026-09-28 ✅ 2026-09-29\n- [ ] B\n"
+  },
+  {
+   "name": "complete_without_done_date",
+   "text": "- [ ] Task 📅 2026-09-28\n",
+   "op": "done",
+   "line": 0,
+   "doneDate": null,
+   "expected": "- [x] Task 📅 2026-09-28\n"
+  },
+  {
+   "name": "uncomplete_removes_done_date",
+   "text": "- [x] Task 📅 2026-09-28 ✅ 2026-09-29\n",
+   "op": "undone",
+   "line": 0,
+   "expected": "- [ ] Task 📅 2026-09-28\n"
+  },
+  {
+   "name": "uncomplete_uppercase_X",
+   "text": "- [X] Task ✅ 2026-09-29\n",
+   "op": "undone",
+   "line": 0,
+   "expected": "- [ ] Task\n"
+  },
+  {
+   "name": "crlf_bom_no_trailing_newline_preserved",
+   "text": "\ufeff- [ ] A\r\n- [ ] B\r\n- [ ] C",
+   "op": "setFields",
+   "line": 1,
+   "description": "B",
+   "due": "2026-09-28",
+   "time": null,
+   "expected": "\ufeff- [ ] A\r\n- [ ] B 📅 2026-09-28\r\n- [ ] C"
+  },
+  {
+   "name": "nbsp_indent_spacing_preserved",
+   "text": "  - [ ] Keep\u00a0this   text ⏰ 09:00 📅 2026-09-28\n",
+   "op": "setFields",
+   "line": 0,
+   "description": "Keep\u00a0this   text",
+   "due": "2026-09-28",
+   "time": "10:00",
+   "expected": "  - [ ] Keep\u00a0this   text ⏰ 10:00 📅 2026-09-28\n"
+  },
+  {
+   "name": "other_lines_untouched",
+   "text": "---\ntitle: x\n---\n\n# H\n- [ ] Task\n\ntext",
+   "op": "done",
+   "line": 5,
+   "doneDate": null,
+   "expected": "---\ntitle: x\n---\n\n# H\n- [x] Task\n\ntext"
+  },
+  {
+   "name": "duplicate_lines_edit_second_only",
+   "text": "- [ ] Same\n- [ ] Same\n",
+   "op": "done",
+   "line": 1,
+   "doneDate": null,
+   "expected": "- [ ] Same\n- [x] Same\n"
+  },
+  {
+   "name": "append_no_trailing_newline",
+   "text": "- [ ] A",
+   "op": "append",
+   "description": "B",
+   "due": "2026-09-28",
+   "time": "09:00",
+   "expected": "- [ ] A\n- [ ] B ⏰ 09:00 📅 2026-09-28"
+  },
+  {
+   "name": "append_crlf",
+   "text": "- [ ] A\r\n",
+   "op": "append",
+   "description": "B",
+   "due": null,
+   "time": null,
+   "expected": "- [ ] A\r\n- [ ] B\r\n"
+  },
+  {
+   "name": "append_empty_file",
+   "text": "",
+   "op": "append",
+   "description": "B",
+   "due": null,
+   "time": null,
+   "expected": "- [ ] B\n"
+  },
+  {
+   "name": "append_with_global_filter",
+   "globalFilter": "#task",
+   "text": "# T\n",
+   "op": "append",
+   "description": "B",
+   "due": null,
+   "time": null,
+   "expected": "# T\n- [ ] #task B\n"
+  }
+ ]
+}
