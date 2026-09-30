@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.vaulttasks.data.RepoState.Status
 import app.vaulttasks.domain.Task
@@ -130,7 +131,12 @@ private fun SpaceSwitcher(state: UiState, onSelect: (String) -> Unit, onManage: 
             Modifier.clickable { open = true }.padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(state.activeSpace?.name.orEmpty(), maxLines = 1)
+            Text(
+                state.activeSpace?.name.orEmpty(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
             Text(" ▾")
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
@@ -139,6 +145,8 @@ private fun SpaceSwitcher(state: UiState, onSelect: (String) -> Unit, onManage: 
                     text = {
                         Text(
                             s.name,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             fontWeight = if (s.id == state.activeSpace?.id) FontWeight.Bold else FontWeight.Normal,
                         )
                     },
