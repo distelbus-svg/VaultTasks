@@ -19,3 +19,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - Phase 2 — skeleton + vault access: `domain/.../vault` (FS seam, `FileScanner`, `VaultWriter`), `app` (SAF file system,
   M3 dynamic-color theme, folder picker, per-file task list, checkbox toggle through the write protocol).
   Gate: pick the vault on the Honor 400 and see parsed tasks.
+- Phase 3 — spaces + list + create/edit: `Space`/`SpacesData` and `TaskGrouping` in `domain`, `VaultWriter.move`
+  (edit + move between files of a space, rolled back on failure), scan scope limited to files assigned to spaces;
+  `app` has the space switcher, Overdue/Today/Upcoming/No date/Done list, swipe complete/delete with undo,
+  create/edit sheet (date, time, file picker) and the space manager/editor. Spaces persist as JSON in DataStore
+  (no Room: the task cache is in memory, the vault files are the source of truth).
+  Gate: create a space, assign files, create/edit/complete/delete tasks on the Honor 400 and check the vault files.

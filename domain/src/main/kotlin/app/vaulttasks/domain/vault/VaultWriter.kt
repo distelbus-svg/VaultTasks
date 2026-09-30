@@ -65,6 +65,43 @@ class VaultWriter(
             Edit(text.appendLine(TaskSerializer.newLine(fields, globalFilter(), bullet)))
         }
 
+    /**
+     * Edit + move to another file (spec §7.2): remove the line from its file, append the edited line to [toPath].
+     * Everything the app does not edit (priority, 🆔, …) travels with the line. If the append fails, the removal is
+     * rolled back via [restore], so a failure never loses the task. The returned file is [toPath]'s new state;
+     * callers rescan the source file.
+     */
+    fun move(task: Task, fields: TaskFields, toPath: String): WriteResult {
+        val fromPath = task.id.path
+        if (toPath == fromPath) return update(task, fields)
+        // Consistent lock order so two opposite moves can never deadlock; locks are reentrant for the nested mutate calls.
+        val (first, second) = listOf(fromPath, toPath).sorted()
+        val l1 = locks.computeIfAbsent(first) { ReentrantLock() }
+        val l2 = locks.computeIfAbsent(second) { ReentrantLock() }
+        return l1.withLock {
+            l2.withLock {
+                var newText: String? = null
+                val removal = mutate(fromPath) { text, fresh ->
+                    val (index, line) = locate(text, fresh, task) ?: return@mutate null
+                    newText = TaskSerializer.applyFields(line, fields, globalFilter())
+                    Edit(text.removeLine(index), removedIndex = index, removedText = text.lines[index].text)
+                }
+                if (removal !is WriteResult.Ok) return@withLock removal
+                val removed = removal.removed ?: return@withLock WriteResult.Failed(IllegalStateException("no removal recorded"))
+
+                val added = mutate(toPath) { text, _ -> Edit(text.appendLine(newText!!)) }
+                if (added is WriteResult.Ok) return@withLock added
+
+                when (val back = restore(removed)) {
+                    is WriteResult.Ok -> added
+                    else -> WriteResult.Failed(
+                        IOException("Move failed and could not be undone. The task line was: ${removed.text}", (back as? WriteResult.Failed)?.cause),
+                    )
+                }
+            }
+        }
+    }
+
     /** Undo of [delete]: original index if the file is unchanged since, otherwise appended. */
     fun restore(removed: RemovedLine): WriteResult =
         mutate(removed.path) { text, _ ->

@@ -18,6 +18,8 @@ data class ScanResult(
     val reparsed: Int,
     /** Files that could not be read this pass (mid-write, invalid UTF-8, I/O error). Previous state is kept. */
     val unreadable: List<String>,
+    /** Every `.md` path in the vault this pass, regardless of [FileScanner.scan]'s `include` (feeds the space file picker). */
+    val available: List<String> = emptyList(),
 )
 
 /**
@@ -42,7 +44,8 @@ class FileScanner(
         val unreadable = ArrayList<String>()
         var reparsed = 0
 
-        for (info in fs.listMarkdown()) {
+        val listing = fs.listMarkdown()
+        for (info in listing) {
             if (!include(info.path)) continue
             val prev = previous[info.path]
             if (!force && prev != null && prev.state.lastModified == info.lastModified && prev.state.size == info.size) {
@@ -75,6 +78,6 @@ class FileScanner(
             cached = previous.values.flatMap { it.tasks },
             parsed = out.values.flatMap { it.tasks },
         )
-        return ScanResult(out, changes, reparsed, unreadable)
+        return ScanResult(out, changes, reparsed, unreadable, listing.map { it.path })
     }
 }

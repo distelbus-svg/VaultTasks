@@ -18,10 +18,16 @@ class SettingsStore(context: Context) {
     /** Tasks global filter (spec §4.1); empty = off. */
     val globalFilter: Flow<String> = store.data.map { it[GLOBAL_FILTER].orEmpty() }
 
+    /** Spaces + active space as JSON (see [SpacesJson]); null until the first space is created. */
+    val spacesJson: Flow<String?> = store.data.map { it[SPACES] }
+
     suspend fun setVaultUri(uri: String) = store.edit { it[VAULT_URI] = uri }
+
+    suspend fun setSpacesJson(json: String) = store.edit { it[SPACES] = json }
 
     private companion object {
         val VAULT_URI = stringPreferencesKey("vault_uri")
         val GLOBAL_FILTER = stringPreferencesKey("global_filter")
+        val SPACES = stringPreferencesKey("spaces_v1")
     }
 }

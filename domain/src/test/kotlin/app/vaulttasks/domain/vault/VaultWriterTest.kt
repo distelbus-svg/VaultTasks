@@ -124,6 +124,79 @@ class VaultWriterTest {
         assertEquals("- [ ] a\n- [ ] c\n- [ ] d\n- [ ] b\n", fs.text("a.md"))
     }
 
+    @Test fun `move removes from source and appends the edited line to target keeping signifiers`() {
+        fs.put("a.md", "- [ ] keep\n- [ ] Call Anna ⏰ 19:00 🔼 📅 2026-09-28\n")
+        fs.put("b.md", "# B\n- [ ] existing\n")
+        val t = scan().tasks.first { it.description.startsWith("Call") }
+        val r = writer.move(t, TaskFields("Call Anna", LocalDate.of(2026, 10, 5), LocalTime.of(7, 0)), "b.md")
+        assertIs<WriteResult.Ok>(r)
+        assertEquals("- [ ] keep\n", fs.text("a.md"))
+        assertEquals("# B\n- [ ] existing\n- [ ] Call Anna ⏰ 07:00 🔼 📅 2026-10-05\n", fs.text("b.md"))
+        assertEquals("b.md", r.file.state.path)
+    }
+
+    @Test fun `move to the same file is a plain update`() {
+        fs.put("a.md", "- [ ] one\n- [ ] two\n")
+        val t = scan().tasks[0]
+        assertIs<WriteResult.Ok>(writer.move(t, TaskFields("one!", null, null), "a.md"))
+        assertEquals("- [ ] one!\n- [ ] two\n", fs.text("a.md"))
+    }
+
+    @Test fun `move to a missing file is rolled back and loses nothing`() {
+        val src = "- [ ] one\n- [ ] two\n- [ ] three\n"
+        fs.put("a.md", src)
+        val t = scan().tasks[1]
+        assertEquals(WriteResult.Missing, writer.move(t, TaskFields("two", null, null), "nope.md"))
+        assertEquals(src, fs.text("a.md"))
+    }
+
+    @Test fun `move with a stale source writes nothing anywhere`() {
+        fs.put("a.md", "- [ ] one\n")
+        fs.put("b.md", "- [ ] other\n")
+        val t = scan().tasks[0]
+        fs.put("a.md", "- [ ] one edited elsewhere\n")
+        assertEquals(WriteResult.Stale, writer.move(t, TaskFields("one", null, null), "b.md"))
+        assertEquals("- [ ] one edited elsewhere\n", fs.text("a.md"))
+        assertEquals("- [ ] other\n", fs.text("b.md"))
+    }
+
+    @Test fun `move to a file that is not valid utf8 is refused and rolled back`() {
+        val src = "- [ ] one\n- [ ] two\n"
+        fs.put("a.md", src)
+        fs.put("b.md", byteArrayOf(0xC3.toByte(), 0x28))
+        val t = scan().tasks[0]
+        assertIs<WriteResult.Failed>(writer.move(t, TaskFields("one", null, null), "b.md"))
+        assertEquals(src, fs.text("a.md"))
+    }
+
+    @Test fun `opposite concurrent moves do not deadlock`() {
+        fs.put("a.md", "- [ ] from a\n")
+        fs.put("b.md", "- [ ] from b\n")
+        val all = scanner.scan(emptyMap()).files
+        val ta = all.getValue("a.md").tasks[0]
+        val tb = all.getValue("b.md").tasks[0]
+        val pool = Executors.newFixedThreadPool(2)
+        val start = CountDownLatch(1)
+        val f1 = pool.submit<WriteResult> { start.await(); writer.move(ta, TaskFields("from a", null, null), "b.md") }
+        val f2 = pool.submit<WriteResult> { start.await(); writer.move(tb, TaskFields("from b", null, null), "a.md") }
+        start.countDown()
+        val r1 = f1.get(10, java.util.concurrent.TimeUnit.SECONDS)
+        val r2 = f2.get(10, java.util.concurrent.TimeUnit.SECONDS)
+        pool.shutdown()
+        assertIs<WriteResult.Ok>(r1)
+        assertIs<WriteResult.Ok>(r2)
+        assertEquals("- [ ] from b\n", fs.text("a.md"))
+        assertEquals("- [ ] from a\n", fs.text("b.md"))
+    }
+
+    @Test fun `scan reports every vault file as available even when scoped`() {
+        fs.put("a.md", "- [ ] one\n")
+        fs.put("sub/b.md", "- [ ] two\n")
+        val r = scanner.scan(emptyMap(), include = { it == "a.md" })
+        assertEquals(listOf("a.md"), r.files.keys.toList())
+        assertEquals(setOf("a.md", "sub/b.md"), r.available.toSet())
+    }
+
     @Test fun `concurrent writes to one file are serialized and none is lost`() {
         val n = 20
         fs.put("a.md", (0 until n).joinToString("") { "- [ ] task $it\n" })
