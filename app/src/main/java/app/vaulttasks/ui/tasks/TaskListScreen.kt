@@ -27,12 +27,13 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxDefaults
+import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
@@ -362,7 +363,10 @@ private fun SwipeableTaskRow(
     modifier: Modifier = Modifier,
 ) {
     val current by rememberUpdatedState(task)
-    val swipe = rememberSwipeToDismissBoxState()
+    // Not rememberSwipeToDismissBoxState(): that one is rememberSaveable and can hand a re-added row (Undo of a delete,
+    // same list key) its old "swiped away" value, which then deleted the restored task again.
+    val threshold = SwipeToDismissBoxDefaults.positionalThreshold
+    val swipe = remember { SwipeToDismissBoxState(SwipeToDismissBoxValue.Settled, threshold) }
     var touching by remember { mutableStateOf(false) }
     LaunchedEffect(swipe) {
         snapshotFlow { swipe.settledValue }.collect { value ->
