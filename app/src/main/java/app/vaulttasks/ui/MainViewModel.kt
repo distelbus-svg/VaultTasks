@@ -6,12 +6,20 @@ import androidx.lifecycle.viewModelScope
 import app.vaulttasks.data.EditOutcome
 import app.vaulttasks.data.RepoState
 import app.vaulttasks.data.VaultRepository
+import app.vaulttasks.data.alarms.DiagEntry
+import app.vaulttasks.data.alarms.DiagnosticsLog
+import app.vaulttasks.data.alarms.HealthReport
+import app.vaulttasks.data.alarms.ReminderHealth
+import app.vaulttasks.data.settings.SettingsStore
 import app.vaulttasks.domain.Space
 import app.vaulttasks.domain.Task
 import app.vaulttasks.domain.TaskFields
 import app.vaulttasks.domain.TaskGroups
 import app.vaulttasks.domain.TaskGrouping
+import app.vaulttasks.domain.TaskId
 import app.vaulttasks.domain.TaskState
+import app.vaulttasks.domain.alarms.ReminderSettings
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -19,16 +27,20 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import java.time.LocalTime
 import java.util.UUID
 
 sealed interface Screen {
     data object Tasks : Screen
     data object Spaces : Screen
     data class SpaceEdit(val spaceId: String) : Screen
+    data object Reminders : Screen
 }
 
 /** What the create/edit sheet is doing. [Edit] holds the snapshot the user opened; the write protocol detects staleness. */
@@ -52,15 +64,31 @@ data class UiState(
     val screen: Screen = Screen.Tasks,
     val editor: Editor? = null,
     val saving: Boolean = false,
+    /** Null until the first check; the home banner shows while any detectable check fails (spec §8.5). */
+    val health: HealthReport? = null,
+    val reminders: ReminderSettings = ReminderSettings(),
+    /** Newest first. */
+    val diagnostics: List<DiagEntry> = emptyList(),
 )
 
-class MainViewModel(private val repo: VaultRepository) : ViewModel() {
+class MainViewModel(
+    private val repo: VaultRepository,
+    private val settings: SettingsStore,
+    private val healthCheck: ReminderHealth,
+    private val diagnosticsLog: DiagnosticsLog,
+) : ViewModel() {
 
-    private data class Local(val screen: Screen = Screen.Tasks, val editor: Editor? = null, val saving: Boolean = false)
+    private data class Local(
+        val screen: Screen = Screen.Tasks,
+        val editor: Editor? = null,
+        val saving: Boolean = false,
+        val health: HealthReport? = null,
+        val diagnostics: List<DiagEntry> = emptyList(),
+    )
 
     private val local = MutableStateFlow(Local())
 
-    val uiState: StateFlow<UiState> = combine(repo.state, local) { s, l ->
+    val uiState: StateFlow<UiState> = combine(repo.state, local, settings.reminders) { s, l, reminders ->
         val active = s.spaces.active
         val tasks = active?.files.orEmpty().flatMap { s.files[it]?.tasks.orEmpty() }
         // A space editor for a space that no longer exists falls back to the list.
@@ -78,6 +106,9 @@ class MainViewModel(private val repo: VaultRepository) : ViewModel() {
             screen = screen,
             editor = l.editor,
             saving = l.saving,
+            health = l.health,
+            reminders = reminders,
+            diagnostics = l.diagnostics,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
@@ -85,7 +116,8 @@ class MainViewModel(private val repo: VaultRepository) : ViewModel() {
     val messages: SharedFlow<UiMessage> = _messages.asSharedFlow()
 
     init {
-        viewModelScope.launch { repo.load() }
+        viewModelScope.launch { repo.ensureLoaded() }
+        refreshHealth()
     }
 
     // ---- vault ---------------------------------------------------------------------------------------------
@@ -104,9 +136,59 @@ class MainViewModel(private val repo: VaultRepository) : ViewModel() {
 
     fun openSpaceEdit(id: String) = local.update { it.copy(screen = Screen.SpaceEdit(id)) }
 
-    /** System back / up: SpaceEdit → Spaces → Tasks. */
+    fun openReminders() {
+        local.update { it.copy(screen = Screen.Reminders) }
+        refreshHealth()
+    }
+
+    /** System back / up: SpaceEdit → Spaces → Tasks; Reminders → Tasks. */
     fun back() = local.update {
         it.copy(screen = if (it.screen is Screen.SpaceEdit) Screen.Spaces else Screen.Tasks)
+    }
+
+    // ---- reminders (spec §7.4, §8.5) -----------------------------------------------------------------------
+
+    /** Re-reads permissions and the diagnostics log. Cheap; called on resume and after returning from system settings. */
+    fun refreshHealth() {
+        viewModelScope.launch {
+            val (health, log) = withContext(Dispatchers.IO) { healthCheck.check() to diagnosticsLog.entries().asReversed() }
+            local.update { it.copy(health = health, diagnostics = log) }
+        }
+    }
+
+    fun clearDiagnostics() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { diagnosticsLog.clear() }
+            refreshHealth()
+        }
+    }
+
+    fun setDefaultReminderTime(time: LocalTime) {
+        viewModelScope.launch { settings.setDefaultReminderTime(time) }
+    }
+
+    fun setReminderLeadMinutes(minutes: Int) {
+        viewModelScope.launch { settings.setReminderLeadMinutes(minutes) }
+    }
+
+    /**
+     * Notification tap: waits for the first scan, switches to a space that shows the task's file, and opens its edit
+     * sheet. If the task is gone (edited or completed meanwhile) it says so instead of opening nothing.
+     */
+    fun openFromNotification(id: TaskId) {
+        viewModelScope.launch {
+            repo.ensureLoaded()
+            repo.state.first { it.status != RepoState.Status.LOADING && !it.scanning }
+            val st = repo.state.value
+            val task = st.files[id.path]?.tasks?.firstOrNull { it.id == id }
+            val space = st.spaces.spaces.let { all -> all.firstOrNull { it.id == st.spaces.active?.id && id.path in it.files } ?: all.firstOrNull { id.path in it.files } }
+            if (task == null || space == null) {
+                say("That task no longer exists as it was")
+                return@launch
+            }
+            if (space.id != st.spaces.active?.id) repo.updateSpaces { it.setActive(space.id) }
+            local.update { it.copy(screen = Screen.Tasks, editor = Editor.Edit(task), saving = false) }
+        }
     }
 
     // ---- spaces --------------------------------------------------------------------------------------------

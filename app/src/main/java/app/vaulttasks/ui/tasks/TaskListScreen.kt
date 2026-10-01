@@ -74,6 +74,7 @@ fun TaskListScreen(
     onDelete: (Task) -> Unit,
     onOpenTask: (Task) -> Unit,
     onCreate: () -> Unit,
+    onOpenReminders: () -> Unit,
 ) {
     val ready = state.status == Status.READY
     Scaffold(
@@ -90,7 +91,7 @@ fun TaskListScreen(
                 },
                 actions = {
                     if (ready) {
-                        OverflowMenu(state.scanning, onRescan, onOpenSpaces, onPickVault)
+                        OverflowMenu(state.scanning, onRescan, onOpenSpaces, onOpenReminders, onPickVault)
                     }
                 },
             )
@@ -117,7 +118,7 @@ fun TaskListScreen(
                     Text("Pick the folder again to continue.", modifier = Modifier.padding(top = 4.dp))
                     Button(onClick = onPickVault, modifier = Modifier.padding(top = 16.dp)) { Text("Choose vault folder") }
                 }
-                Status.READY -> Ready(state, onRescan, onOpenSpaces, onEditSpace, onToggle, onDelete, onOpenTask)
+                Status.READY -> Ready(state, onRescan, onOpenSpaces, onEditSpace, onToggle, onDelete, onOpenTask, onOpenReminders)
             }
         }
     }
@@ -169,7 +170,7 @@ private fun SpaceSwitcher(state: UiState, onSelect: (String) -> Unit, onManage: 
 }
 
 @Composable
-private fun OverflowMenu(scanning: Boolean, onRescan: () -> Unit, onSpaces: () -> Unit, onPickVault: () -> Unit) {
+private fun OverflowMenu(scanning: Boolean, onRescan: () -> Unit, onSpaces: () -> Unit, onReminders: () -> Unit, onPickVault: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         TextButton(onClick = { open = true }) { Text("⋮", style = MaterialTheme.typography.titleLarge) }
@@ -187,6 +188,13 @@ private fun OverflowMenu(scanning: Boolean, onRescan: () -> Unit, onSpaces: () -
                 onClick = {
                     open = false
                     onSpaces()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Reminders") },
+                onClick = {
+                    open = false
+                    onReminders()
                 },
             )
             DropdownMenuItem(
@@ -219,9 +227,24 @@ private fun Ready(
     onToggle: (Task) -> Unit,
     onDelete: (Task) -> Unit,
     onOpenTask: (Task) -> Unit,
+    onOpenReminders: () -> Unit,
 ) {
     val space = state.activeSpace
     Column(Modifier.fillMaxSize()) {
+        // Spec §8.5: persistent warning while any detectable reminder precondition fails.
+        if (state.health?.allOk == false) {
+            Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth().clickable { onOpenReminders() }) {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Reminders may not fire on time. Tap to fix.",
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text("›", color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.titleLarge)
+                }
+            }
+        }
         state.error?.let { Text("Scan failed: $it", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
         if (state.unreadable.isNotEmpty()) {
             Text(

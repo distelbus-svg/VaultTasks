@@ -37,6 +37,8 @@ data class RepoState(
     val spaces: SpacesData = SpacesData(),
     /** Every `.md` path in the vault as of the last scan (feeds the space file picker). */
     val vaultFiles: List<String> = emptyList(),
+    /** True once a scan has completed for the current vault; alarms are only synced from a complete picture. */
+    val scanComplete: Boolean = false,
 ) {
     enum class Status { LOADING, NO_VAULT, PERMISSION_LOST, READY }
 }
@@ -68,7 +70,15 @@ class VaultRepository(
     private var writer: VaultWriter? = null
     private var globalFilter: String = ""
 
-    suspend fun load() = opMutex.withLock {
+    private var loaded = false
+
+    /**
+     * Loads spaces and the vault once per process. Safe to call from the UI and from receivers: the second caller
+     * waits for the first and returns without rescanning (foreground/refresh rescans go through [rescan]).
+     */
+    suspend fun ensureLoaded() = opMutex.withLock {
+        if (loaded) return@withLock
+        loaded = true
         globalFilter = settings.globalFilter.first()
         val spaces = SpacesJson.decode(settings.spacesJson.first())
         _state.update { it.copy(spaces = spaces) }
@@ -175,7 +185,10 @@ class VaultRepository(
                 sc.scan(_state.value.files, include = { it in scope }, force = force)
             }
             _state.update {
-                it.copy(files = result.files, unreadable = result.unreadable, vaultFiles = result.available, scanning = false)
+                it.copy(
+                    files = result.files, unreadable = result.unreadable, vaultFiles = result.available,
+                    scanning = false, scanComplete = true,
+                )
             }
         } catch (e: SecurityException) {
             scanner = null
