@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
             VaultTasksTheme {
                 val vm: MainViewModel = viewModel(
                     factory = viewModelFactory {
-                        initializer { MainViewModel(container.vault, container.settings, container.health, container.diagnostics) }
+                        initializer { MainViewModel(container.vault, container.settings, container.health, container.diagnostics, container.leads) }
                     },
                 )
                 val state by vm.uiState.collectAsStateWithLifecycle()
@@ -161,7 +161,6 @@ class MainActivity : ComponentActivity() {
                         onRefresh = vm::refreshHealth,
                         onClearDiagnostics = vm::clearDiagnostics,
                         onDefaultTime = vm::setDefaultReminderTime,
-                        onLeadMinutes = vm::setReminderLeadMinutes,
                     )
                 }
             }

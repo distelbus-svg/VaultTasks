@@ -6,6 +6,7 @@ import app.vaulttasks.data.VaultRepository
 import app.vaulttasks.data.alarms.AlarmCoordinator
 import app.vaulttasks.data.alarms.AndroidAlarmBackend
 import app.vaulttasks.data.alarms.DiagnosticsLog
+import app.vaulttasks.data.alarms.LeadStore
 import app.vaulttasks.data.alarms.Notifications
 import app.vaulttasks.data.alarms.PrefsAlarmStore
 import app.vaulttasks.data.alarms.ReminderHealth
@@ -24,9 +25,11 @@ class AppContainer(context: Context) {
     val vault = VaultRepository(context, settings)
     val diagnostics = DiagnosticsLog(context)
     val health = ReminderHealth(context)
+    val leads = LeadStore(context)
     val alarms = AlarmCoordinator(
         repo = vault,
         settings = settings,
+        leadStore = leads,
         syncer = AlarmSyncer(AndroidAlarmBackend(context), PrefsAlarmStore(context)),
         diagnostics = diagnostics,
         scope = appScope,

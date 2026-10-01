@@ -16,7 +16,7 @@ data class DiagEntry(
     val scheduledMillis: Long?,
     val label: String,
 ) {
-    enum class Kind { FIRE, SNOOZE_FIRE, EVENT }
+    enum class Kind { FIRE, EVENT }
 
     val latenessMillis: Long? get() = scheduledMillis?.let { atMillis - it }
 }
@@ -43,7 +43,7 @@ class DiagnosticsLog(context: Context) {
         (0 until arr.length()).map {
             val o = arr.getJSONObject(it)
             DiagEntry(
-                DiagEntry.Kind.valueOf(o.getString("k")),
+                runCatching { DiagEntry.Kind.valueOf(o.getString("k")) }.getOrDefault(DiagEntry.Kind.FIRE), // v0.4.0 wrote SNOOZE_FIRE
                 o.getLong("at"),
                 if (o.isNull("sch")) null else o.getLong("sch"),
                 o.getString("l"),

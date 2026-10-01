@@ -10,7 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -40,7 +39,6 @@ import kotlin.math.abs
 
 private val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
 private val stampFmt = DateTimeFormatter.ofPattern("MMM d, HH:mm:ss")
-private val LEAD_OPTIONS = listOf(0, 5, 10, 15, 30, 60)
 
 /** Spec §7.4/§8.5: reminder settings, the health check, MagicOS guidance and the fire-time diagnostics log. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,7 +55,6 @@ fun RemindersScreen(
     onRefresh: () -> Unit,
     onClearDiagnostics: () -> Unit,
     onDefaultTime: (LocalTime) -> Unit,
-    onLeadMinutes: (Int) -> Unit,
 ) {
     var showTime by rememberSaveable { mutableStateOf(false) }
     Scaffold(
@@ -96,16 +93,11 @@ fun RemindersScreen(
                 Text("Default time for date-only tasks", Modifier.weight(1f))
                 OutlinedButton(onClick = { showTime = true }) { Text(settings.defaultTime.format(timeFmt)) }
             }
-            Text("Remind me before the due time", style = MaterialTheme.typography.bodyMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                LEAD_OPTIONS.forEach { m ->
-                    FilterChip(
-                        selected = settings.leadMinutes == m,
-                        onClick = { onLeadMinutes(m) },
-                        label = { Text(if (m == 0) "At time" else if (m == 60) "1 h" else "$m min") },
-                    )
-                }
-            }
+            Text(
+                "“Remind me before” is set per task, in the task editor under the due time.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -166,7 +158,7 @@ private fun DiagRow(e: DiagEntry) {
         val late = e.latenessMillis
         val head = when (e.kind) {
             DiagEntry.Kind.EVENT -> "$at  ·  ${e.label}"
-            else -> "$at  ·  ${lateness(late!!)}" + if (e.kind == DiagEntry.Kind.SNOOZE_FIRE) "  ·  snoozed" else ""
+            else -> "$at  ·  ${lateness(late!!)}"
         }
         Text(head, style = MaterialTheme.typography.bodyMedium)
         if (e.kind != DiagEntry.Kind.EVENT) {

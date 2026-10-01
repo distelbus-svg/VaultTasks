@@ -8,8 +8,6 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 private class FakeBackend : AlarmBackend {
@@ -56,11 +54,11 @@ class AlarmsTest {
         priority = null, isRecurring = false, doneDate = null, rawLine = "- [ ] $text",
     )
 
-    private fun plan(vararg tasks: Task, s: ReminderSettings = settings, reserved: Set<Int> = emptySet()) =
-        AlarmPlanner.plan(tasks.map { it to "Space" }, s, now, reserved)
+    private fun plan(vararg tasks: Task, leads: Map<String, Int> = emptyMap()) =
+        AlarmPlanner.plan(tasks.map { it to "Space" }, settings, now) { leads[it.description] ?: 0 }
 
-    private fun sync(desired: List<AlarmSpec>, open: Set<TaskId> = emptySet(), keep: Set<String> = emptySet(), force: Boolean = false) =
-        syncer.sync(desired, open, keep, now, force)
+    private fun sync(desired: List<AlarmSpec>, keep: Set<String> = emptySet(), force: Boolean = false) =
+        syncer.sync(desired, keep, now, force)
 
     // ---- planner ----------------------------------------------------------------------------------------------
 
@@ -71,20 +69,21 @@ class AlarmsTest {
     @Test fun `date-only task fires at default time and lead is subtracted`() {
         val t = task("x", time = null)
         assertEquals(LocalDateTime.of(2026, 10, 1, 9, 0), plan(t).single().fireAt)
-        assertEquals(LocalDateTime.of(2026, 10, 1, 8, 30), plan(t, s = ReminderSettings(leadMinutes = 30)).single().fireAt)
+        assertEquals(LocalDateTime.of(2026, 10, 1, 8, 30), plan(t, leads = mapOf("x" to 30)).single().fireAt)
     }
 
     @Test fun `past, undated, done and cancelled tasks are excluded`() {
         val out = plan(
             task("past", date = LocalDate.of(2026, 9, 29)),
             task("now", date = LocalDate.of(2026, 9, 30), time = LocalTime.of(12, 0)), // not strictly after now
-            task("lead pushes into past", date = LocalDate.of(2026, 9, 30), time = LocalTime.of(12, 5)),
+            task("just ahead", date = LocalDate.of(2026, 9, 30), time = LocalTime.of(12, 5)),
             task("undated", date = null, time = null),
             task("done", state = TaskState.DONE),
             task("cancelled", state = TaskState.CANCELLED),
         )
-        assertEquals(listOf("lead pushes into past"), out.map { it.title })
-        assertTrue(plan(task("lead pushes into past", date = LocalDate.of(2026, 9, 30), time = LocalTime.of(12, 5)), s = ReminderSettings(leadMinutes = 10)).isEmpty())
+        assertEquals(listOf("just ahead"), out.map { it.title })
+        val soon = task("lead pushes into past", date = LocalDate.of(2026, 9, 30), time = LocalTime.of(12, 5))
+        assertTrue(plan(soon, leads = mapOf(soon.description to 10)).isEmpty())
     }
 
     @Test fun `identical lines get distinct codes and codes are stable`() {
@@ -93,10 +92,18 @@ class AlarmsTest {
         assertEquals(a, plan(task("same", occ = 1), task("same", occ = 0)).sortedBy { it.id.occurrence })
     }
 
-    @Test fun `reserved codes are probed past`() {
-        val free = plan(task("x")).single().code
-        val probed = plan(task("x"), reserved = setOf(free)).single().code
-        assertEquals(free + 1, probed)
+    @Test fun `lead applies per task`() {
+        val a = task("a")
+        val b = task("b")
+        val out = plan(a, b, leads = mapOf("a" to 15)).associate { it.title to it.fireAt }
+        assertEquals(LocalDateTime.of(2026, 10, 1, 18, 45), out["a"])
+        assertEquals(LocalDateTime.of(2026, 10, 1, 19, 0), out["b"])
+    }
+
+    @Test fun `snooze target rounds up to the next whole minute and rolls the date`() {
+        assertEquals(LocalDateTime.of(2026, 9, 30, 12, 10), AlarmPlanner.snoozeTarget(LocalDateTime.of(2026, 9, 30, 12, 0), 10))
+        assertEquals(LocalDateTime.of(2026, 9, 30, 12, 11), AlarmPlanner.snoozeTarget(LocalDateTime.of(2026, 9, 30, 12, 0, 3), 10))
+        assertEquals(LocalDateTime.of(2026, 10, 1, 0, 31), AlarmPlanner.snoozeTarget(LocalDateTime.of(2026, 9, 30, 23, 30, 1), 60))
     }
 
     // ---- syncer -----------------------------------------------------------------------------------------------
@@ -158,44 +165,5 @@ class AlarmsTest {
         sync(d)
         syncer.markFired(d.single().code)
         assertTrue(store.specs.isEmpty())
-    }
-
-    // ---- snooze -----------------------------------------------------------------------------------------------
-
-    @Test fun `snooze is a separate alarm that survives syncs while the task is open`() {
-        val d = plan(task("a"))
-        sync(d)
-        val snooze = assertNotNull(syncer.snooze(d.single(), now.plusMinutes(10)))
-        assertEquals(AlarmKind.SNOOZE, snooze.kind)
-        assertEquals(2, backend.live.size)
-        val open = setOf(d.single().id)
-        sync(d, open = open)
-        sync(d, open = open, force = true)
-        assertTrue(snooze.code in backend.live)
-    }
-
-    @Test fun `a second snooze replaces the first`() {
-        val d = plan(task("a"))
-        sync(d)
-        syncer.snooze(d.single(), now.plusMinutes(10))
-        syncer.snooze(d.single(), now.plusMinutes(60))
-        val snoozes = backend.live.values.filter { it.kind == AlarmKind.SNOOZE }
-        assertEquals(listOf(now.plusMinutes(60)), snoozes.map { it.fireAt })
-    }
-
-    @Test fun `snooze is dropped when its task is no longer open`() {
-        val d = plan(task("a"))
-        sync(d)
-        val snooze = assertNotNull(syncer.snooze(d.single(), now.plusMinutes(10)))
-        sync(emptyList(), open = emptySet())
-        assertNull(backend.live[snooze.code])
-        assertTrue(store.specs.isEmpty())
-    }
-
-    @Test fun `snooze does not touch the file-derived plan`() {
-        val d = plan(task("a"))
-        sync(d)
-        syncer.snooze(d.single(), now.plusMinutes(10))
-        assertEquals(1, AlarmPlanner.plan(listOf(task("a") to "S"), settings, now, syncer.snoozeCodes()).size)
     }
 }

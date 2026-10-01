@@ -3,7 +3,6 @@ package app.vaulttasks.data.alarms
 import android.app.AlarmManager
 import android.content.Context
 import app.vaulttasks.domain.alarms.AlarmBackend
-import app.vaulttasks.domain.alarms.AlarmKind
 import app.vaulttasks.domain.alarms.AlarmSpec
 import app.vaulttasks.domain.alarms.AlarmStore
 import app.vaulttasks.domain.TaskId
@@ -58,7 +57,6 @@ class PrefsAlarmStore(context: Context) : AlarmStore {
 
     private fun encode(s: AlarmSpec) = JSONObject()
         .put("code", s.code)
-        .put("kind", s.kind.name)
         .put("path", s.id.path)
         .put("text", s.id.normalizedText)
         .put("occ", s.id.occurrence)
@@ -70,7 +68,6 @@ class PrefsAlarmStore(context: Context) : AlarmStore {
 
     private fun decode(o: JSONObject) = AlarmSpec(
         code = o.getInt("code"),
-        kind = AlarmKind.valueOf(o.getString("kind")),
         id = TaskId(o.getString("path"), o.getString("text"), o.getInt("occ")),
         fireAt = LocalDateTime.parse(o.getString("at")),
         title = o.getString("title"),

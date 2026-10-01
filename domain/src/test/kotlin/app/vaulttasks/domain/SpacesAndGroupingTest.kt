@@ -1,6 +1,6 @@
 package app.vaulttasks.domain
 
-import java.time.LocalDate
+import java.time.LocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -83,7 +83,7 @@ class SpacesDataTest {
 }
 
 class TaskGroupingTest {
-    private val today = LocalDate.of(2026, 9, 30)
+    private val now = LocalDateTime.of(2026, 9, 30, 12, 0)
 
     private fun tasks(path: String, vararg lines: String) =
         TaskParser.parseFile(path, VaultText.parse(lines.joinToString("\n") + "\n"), "")
@@ -100,7 +100,7 @@ class TaskGroupingTest {
             "- [x] finished 📅 2026-09-01",
             "- [-] dropped 📅 2026-09-29",
         )
-        val g = TaskGrouping.group(ts, today)
+        val g = TaskGrouping.group(ts, now)
         assertEquals(listOf("late"), texts(g.overdue))
         assertEquals(listOf("now"), texts(g.today))
         assertEquals(listOf("soon"), texts(g.upcoming))
@@ -109,7 +109,7 @@ class TaskGroupingTest {
     }
 
     @Test fun `done tasks never count as overdue`() {
-        val g = TaskGrouping.group(tasks("a.md", "- [x] old 📅 2020-01-01"), today)
+        val g = TaskGrouping.group(tasks("a.md", "- [x] old 📅 2020-01-01"), now)
         assertEquals(emptyList(), g.overdue)
         assertEquals(1, g.done.size)
     }
@@ -123,18 +123,32 @@ class TaskGroupingTest {
             "- [ ] also untimed 📅 2026-10-01",
             "- [ ] next day 📅 2026-10-02",
         )
-        val g = TaskGrouping.group(ts, today)
+        val g = TaskGrouping.group(ts, now)
         assertEquals(listOf("early", "late", "untimed", "also untimed", "next day"), texts(g.upcoming))
     }
 
     @Test fun `ties follow the space file order then line order`() {
         val a = tasks("a.md", "- [ ] a1", "- [ ] a2")
         val b = tasks("b.md", "- [ ] b1")
-        val g = TaskGrouping.group(a + b, today, fileOrder = listOf("b.md", "a.md"))
+        val g = TaskGrouping.group(a + b, now, fileOrder = listOf("b.md", "a.md"))
         assertEquals(listOf("b1", "a1", "a2"), texts(g.noDate))
     }
 
     @Test fun `empty input gives empty groups`() {
-        assertEquals(true, TaskGrouping.group(emptyList(), today).isEmpty)
+        assertEquals(true, TaskGrouping.group(emptyList(), now).isEmpty)
+    }
+
+    @Test fun `a timed task becomes overdue once its minute has passed, an untimed one stays in today`() {
+        val ts = tasks(
+            "a.md",
+            "- [ ] earlier today ⏰ 11:59 📅 2026-09-30",
+            "- [ ] due this minute ⏰ 12:00 📅 2026-09-30",
+            "- [ ] later today ⏰ 12:01 📅 2026-09-30",
+            "- [ ] untimed today 📅 2026-09-30",
+        )
+        val g = TaskGrouping.group(ts, now.plusSeconds(30))
+        assertEquals(listOf("earlier today"), texts(g.overdue))
+        assertEquals(listOf("due this minute", "later today", "untimed today"), texts(g.today))
+        assertEquals(listOf("earlier today", "due this minute"), texts(TaskGrouping.group(ts, now.plusMinutes(1)).overdue))
     }
 }

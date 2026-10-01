@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import app.vaulttasks.domain.TaskId
-import app.vaulttasks.domain.alarms.AlarmKind
 import app.vaulttasks.domain.alarms.AlarmSpec
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -24,7 +23,6 @@ object AlarmIntents {
     const val EXTRA_SNOOZE_MINUTES = "snooze_minutes"
 
     private const val X_CODE = "code"
-    private const val X_KIND = "kind"
     private const val X_PATH = "path"
     private const val X_TEXT = "text"
     private const val X_OCC = "occ"
@@ -38,7 +36,6 @@ object AlarmIntents {
 
     fun put(intent: Intent, s: AlarmSpec): Intent = intent
         .putExtra(X_CODE, s.code)
-        .putExtra(X_KIND, s.kind.name)
         .putExtra(X_PATH, s.id.path)
         .putExtra(X_TEXT, s.id.normalizedText)
         .putExtra(X_OCC, s.id.occurrence)
@@ -52,7 +49,6 @@ object AlarmIntents {
     fun read(intent: Intent): AlarmSpec? = runCatching {
         AlarmSpec(
             code = intent.getIntExtra(X_CODE, 0),
-            kind = AlarmKind.valueOf(intent.getStringExtra(X_KIND) ?: return null),
             id = readId(intent) ?: return null,
             fireAt = LocalDateTime.parse(intent.getStringExtra(X_AT) ?: return null),
             title = intent.getStringExtra(X_TITLE).orEmpty(),

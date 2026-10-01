@@ -34,6 +34,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -339,7 +344,13 @@ private fun LazyListScope.taskSection(
     }
 }
 
-/** Swipe right = complete (not for recurring tasks), swipe left = delete (with undo). Both snap back; the list updates from state. */
+/**
+ * Swipe right = complete (not for recurring tasks), swipe left = delete (with undo).
+ *
+ * The action runs only after the swipe has *settled* and the finger is up, so the user can hesitate and swipe back
+ * (a row held past the threshold used to be deleted, and the delete repeated on every list update, via
+ * confirmValueChange). After acting, the row snaps back and the list updates from state.
+ */
 @Composable
 private fun SwipeableTaskRow(
     task: Task,
@@ -351,19 +362,25 @@ private fun SwipeableTaskRow(
     modifier: Modifier = Modifier,
 ) {
     val current by rememberUpdatedState(task)
-    val swipe = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> onToggle(current)
-                SwipeToDismissBoxValue.EndToStart -> onDelete(current)
-                SwipeToDismissBoxValue.Settled -> Unit
-            }
-            false
-        },
-    )
+    val swipe = rememberSwipeToDismissBoxState()
+    var touching by remember { mutableStateOf(false) }
+    LaunchedEffect(swipe) {
+        snapshotFlow { swipe.settledValue }.collect { value ->
+            if (value == SwipeToDismissBoxValue.Settled) return@collect
+            snapshotFlow { touching }.first { !it } // never act while the finger is still down
+            if (swipe.settledValue != value) return@collect // swiped back in the meantime
+            if (value == SwipeToDismissBoxValue.StartToEnd) onToggle(current) else onDelete(current)
+            swipe.reset()
+        }
+    }
     SwipeToDismissBox(
         state = swipe,
-        modifier = modifier,
+        modifier = modifier.pointerInput(Unit) {
+            // Observe only (Initial pass, nothing consumed): is any finger down on this row?
+            awaitPointerEventScope {
+                while (true) touching = awaitPointerEvent(PointerEventPass.Initial).changes.any { it.pressed }
+            }
+        },
         enableDismissFromStartToEnd = !task.isRecurring && task.state != TaskState.CANCELLED,
         backgroundContent = {
             val completing = swipe.dismissDirection == SwipeToDismissBoxValue.StartToEnd

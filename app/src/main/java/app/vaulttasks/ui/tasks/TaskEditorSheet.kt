@@ -1,5 +1,6 @@
 package app.vaulttasks.ui.tasks
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -29,12 +31,18 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
@@ -51,6 +59,9 @@ import java.time.format.FormatStyle
 private val dateFmt = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
 private val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
 
+/** "Remind me before" choices in minutes; 0 = at the due time. */
+private val LEAD_OPTIONS = listOf(0, 5, 10, 15, 30, 60)
+
 /**
  * Create/edit sheet (spec §7.2). Drafts live in rememberSaveable, so rotation or a process restart while the
  * sheet is open does not lose what was typed. The time field is only enabled once a date is set.
@@ -61,7 +72,7 @@ fun TaskEditorSheet(
     editor: Editor,
     space: Space,
     saving: Boolean,
-    onSave: (TaskFields, String) -> Unit,
+    onSave: (TaskFields, String, Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val task = (editor as? Editor.Edit)?.task
@@ -69,6 +80,7 @@ fun TaskEditorSheet(
     var dateEpoch by rememberSaveable(editor) { mutableStateOf<Long?>(task?.dueDate?.toEpochDay()) }
     var minutes by rememberSaveable(editor) { mutableStateOf<Int?>(task?.dueTime?.let { it.hour * 60 + it.minute }) }
     var file by rememberSaveable(editor) { mutableStateOf(task?.id?.path ?: space.creationFile.orEmpty()) }
+    var lead by rememberSaveable(editor) { mutableStateOf((editor as? Editor.Edit)?.leadMinutes ?: 0) }
     var showDate by rememberSaveable(editor) { mutableStateOf(false) }
     var showTime by rememberSaveable(editor) { mutableStateOf(false) }
 
@@ -76,6 +88,8 @@ fun TaskEditorSheet(
     val time = minutes?.let { LocalTime.of(it / 60, it % 60) }
     val files = (space.files + file).filter { it.isNotEmpty() }.distinct()
     val canSave = description.isNotBlank() && file.isNotEmpty() && !saving
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -86,6 +100,14 @@ fun TaskEditorSheet(
                 .padding(horizontal = 24.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // New task: type immediately. (Editing an existing task does not pop the keyboard.)
+            if (task == null) {
+                LaunchedEffect(Unit) {
+                    withFrameNanos { } // let the sheet attach the field first
+                    runCatching { focus.requestFocus() }
+                    keyboard?.show()
+                }
+            }
             Text(if (task == null) "New task" else "Edit task", style = MaterialTheme.typography.titleLarge)
 
             OutlinedTextField(
@@ -94,7 +116,7 @@ fun TaskEditorSheet(
                 label = { Text("Description") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
             )
 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -115,6 +137,19 @@ fun TaskEditorSheet(
                 if (time != null) TextButton(onClick = { minutes = null }) { Text("Clear") }
             }
 
+            if (date != null) {
+                Text("Remind me", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LEAD_OPTIONS.forEach { m ->
+                        FilterChip(
+                            selected = lead == m,
+                            onClick = { lead = m },
+                            label = { Text(if (m == 0) "At time" else if (m == 60) "1 h before" else "$m min before") },
+                        )
+                    }
+                }
+            }
+
             if (files.size > 1) {
                 FilePicker(files, file) { file = it }
             } else {
@@ -124,7 +159,7 @@ fun TaskEditorSheet(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss) { Text("Cancel") }
                 Button(
-                    onClick = { onSave(TaskFields(description.trim(), date, if (date != null) time else null), file) },
+                    onClick = { onSave(TaskFields(description.trim(), date, if (date != null) time else null), file, if (date != null) lead else 0) },
                     enabled = canSave,
                     modifier = Modifier.padding(start = 8.dp),
                 ) { Text(if (saving) "Saving…" else "Save") }

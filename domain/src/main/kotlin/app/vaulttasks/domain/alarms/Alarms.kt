@@ -7,9 +7,7 @@ import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
-
-/** Spec §8.1/§8.4. TASK = the one alarm derived from a task; SNOOZE = an in-app one-shot that never touches the file. */
-enum class AlarmKind { TASK, SNOOZE }
+import java.time.temporal.ChronoUnit
 
 /**
  * One scheduled alarm. Carries everything needed to post the notification so the receiver needs no lookup.
@@ -17,7 +15,6 @@ enum class AlarmKind { TASK, SNOOZE }
  */
 data class AlarmSpec(
     val code: Int,
-    val kind: AlarmKind,
     val id: TaskId,
     val fireAt: LocalDateTime,
     val title: String,
@@ -28,41 +25,55 @@ data class AlarmSpec(
 
 data class ReminderSettings(
     val defaultTime: LocalTime = LocalTime.of(9, 0),
-    val leadMinutes: Int = 0,
 )
 
-enum class SnoozeOption(val minutes: Long) { TEN_MINUTES(10), ONE_HOUR(60) }
-
 object AlarmPlanner {
-    /** Spec §8.1: open tasks with a due date; date-only tasks use the default time; the lead time is subtracted. */
-    fun fireTime(task: Task, settings: ReminderSettings): LocalDateTime? {
+    /** Spec §8.1: open tasks with a due date; date-only tasks use the default time; the task's lead time is subtracted. */
+    fun fireTime(task: Task, defaultTime: LocalTime, leadMinutes: Int): LocalDateTime? {
         if (task.state != TaskState.OPEN) return null
         val date = task.dueDate ?: return null
-        return LocalDateTime.of(date, task.dueTime ?: settings.defaultTime).minusMinutes(settings.leadMinutes.toLong())
+        return LocalDateTime.of(date, task.dueTime ?: defaultTime).minusMinutes(leadMinutes.toLong())
     }
 
     /**
-     * The desired TASK alarm set. Past times are excluded (overdue is shown in-app, never re-fired).
-     * [tasks] pairs each task with the name of the space it is shown under. [reserved] are codes already used by
-     * snoozes; a hash collision is resolved by probing upward in sorted-key order, so the result is deterministic.
+     * The desired alarm set. Past times are excluded (overdue is shown in-app, never re-fired).
+     * [tasks] pairs each task with the name of the space it is shown under; [leadMinutes] gives each task's
+     * "remind me before" (0 = at the due time). A hash collision is resolved by probing upward in sorted-key order,
+     * so the result is deterministic.
      */
     fun plan(
         tasks: List<Pair<Task, String>>,
         settings: ReminderSettings,
         now: LocalDateTime,
-        reserved: Set<Int> = emptySet(),
+        leadMinutes: (Task) -> Int = { 0 },
     ): List<AlarmSpec> {
         val due = tasks.mapNotNull { (t, space) ->
-            val at = fireTime(t, settings) ?: return@mapNotNull null
+            val at = fireTime(t, settings.defaultTime, leadMinutes(t)) ?: return@mapNotNull null
             if (!at.isAfter(now)) null else Triple(t, space, at)
         }.sortedBy { keyOf(it.first.id) }
-        val used = HashSet(reserved)
+        val used = HashSet<Int>()
         return due.map { (t, space, at) ->
             var code = hashCode(keyOf(t.id))
             while (!used.add(code)) code++
-            AlarmSpec(code, AlarmKind.TASK, t.id, at, t.description, t.dueDate, t.dueTime, space)
+            AlarmSpec(code, t.id, at, t.description, t.dueDate, t.dueTime, space)
         }
     }
+
+    /**
+     * Snooze target: [minutes] from [now], rounded UP to the next whole minute because due times have minute
+     * precision (so "10 min" never fires early). Crossing midnight rolls the date.
+     */
+    fun snoozeTarget(now: LocalDateTime, minutes: Long): LocalDateTime {
+        val t = now.plusMinutes(minutes)
+        val floor = t.truncatedTo(ChronoUnit.MINUTES)
+        return if (floor == t) t else floor.plusMinutes(1)
+    }
+
+    /**
+     * Key of a task's "remind me before" setting. Deliberately NOT the task identity: identity is the whole line, so
+     * it changes on every date, time or state edit. Path + description survives those (and edits made in Obsidian).
+     */
+    fun leadKey(path: String, description: String): String = "$path\u0000$description"
 
     fun keyOf(id: TaskId): String = "${id.path}\u0000${id.normalizedText}\u0000${id.occurrence}"
 
@@ -97,37 +108,22 @@ data class SyncReport(val scheduled: Int, val cancelled: Int, val unchanged: Int
 class AlarmSyncer(private val backend: AlarmBackend, private val store: AlarmStore) {
 
     /**
-     * @param desired TASK alarms from [AlarmPlanner.plan]
-     * @param openIds every open task currently known; snoozes for anything else are dropped
+     * @param desired alarms from [AlarmPlanner.plan]
      * @param preservePaths files that could not be read this scan: their alarms are kept, not cancelled
      * @param force re-set every alarm even if unchanged (boot, time/zone change, app start)
      */
-    fun sync(
-        desired: List<AlarmSpec>,
-        openIds: Set<TaskId>,
-        preservePaths: Set<String>,
-        now: LocalDateTime,
-        force: Boolean,
-    ): SyncReport {
+    fun sync(desired: List<AlarmSpec>, preservePaths: Set<String>, now: LocalDateTime, force: Boolean): SyncReport {
         val prev = store.load().associateBy { it.code }
         val wanted = desired.associateBy { it.code }
 
         val carried = ArrayList<AlarmSpec>()
         val stale = ArrayList<Int>()
         for (p in prev.values) {
-            if (p.kind == AlarmKind.TASK && p.code in wanted) continue
-            val alive = p.fireAt.isAfter(now) && when (p.kind) {
-                AlarmKind.TASK -> p.id.path in preservePaths
-                AlarmKind.SNOOZE -> p.id in openIds || p.id.path in preservePaths
-            }
-            if (alive) carried += p else stale += p.code
+            if (p.code in wanted) continue
+            if (p.fireAt.isAfter(now) && p.id.path in preservePaths) carried += p else stale += p.code
         }
 
-        var cancelled = 0
-        for (code in stale) {
-            runCatching { backend.cancel(code) }
-            cancelled++
-        }
+        for (code in stale) runCatching { backend.cancel(code) }
 
         val kept = ArrayList<AlarmSpec>()
         var scheduled = 0
@@ -137,9 +133,7 @@ class AlarmSyncer(private val backend: AlarmBackend, private val store: AlarmSto
             if (!force && prev[spec.code] == spec) {
                 unchanged++
                 kept += spec
-                continue
-            }
-            if (trySet(spec)) {
+            } else if (trySet(spec)) {
                 scheduled++
                 kept += spec
             } else {
@@ -154,22 +148,7 @@ class AlarmSyncer(private val backend: AlarmBackend, private val store: AlarmSto
             kept += c
         }
         store.save(kept)
-        return SyncReport(scheduled, cancelled, unchanged, failed)
-    }
-
-    /** Spec §8.4 Snooze: a one-shot alarm for [base]'s task; replaces an earlier snooze of the same task. Returns the new alarm. */
-    fun snooze(base: AlarmSpec, fireAt: LocalDateTime): AlarmSpec? {
-        val all = store.load()
-        val old = all.filter { it.kind == AlarmKind.SNOOZE && it.id == base.id }
-        val rest = all - old.toSet()
-        val used = rest.mapTo(HashSet()) { it.code }
-        var code = AlarmPlanner.hashCode("snooze\u0000" + AlarmPlanner.keyOf(base.id))
-        while (code in used) code++
-        val spec = base.copy(code = code, kind = AlarmKind.SNOOZE, fireAt = fireAt)
-        old.filter { it.code != code }.forEach { runCatching { backend.cancel(it.code) } }
-        if (!trySet(spec)) return null
-        store.save(rest + spec)
-        return spec
+        return SyncReport(scheduled, stale.size, unchanged, failed)
     }
 
     /** Called when an alarm has fired so it is not re-set by a later forced sync. */
@@ -177,11 +156,6 @@ class AlarmSyncer(private val backend: AlarmBackend, private val store: AlarmSto
         val all = store.load()
         if (all.any { it.code == code }) store.save(all.filter { it.code != code })
     }
-
-    /** Codes of snoozes, so [AlarmPlanner.plan] can avoid them. */
-    fun snoozeCodes(): Set<Int> = store.load().filter { it.kind == AlarmKind.SNOOZE }.mapTo(HashSet()) { it.code }
-
-    fun scheduled(): List<AlarmSpec> = store.load()
 
     private fun trySet(spec: AlarmSpec): Boolean = try {
         backend.set(spec)

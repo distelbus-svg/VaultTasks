@@ -11,7 +11,6 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import app.vaulttasks.R
 import app.vaulttasks.domain.alarms.AlarmSpec
-import app.vaulttasks.domain.alarms.SnoozeOption
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
@@ -54,8 +53,8 @@ object Notifications {
             .setAutoCancel(true)
             .setContentIntent(AlarmIntents.openPending(context, spec))
             .addAction(0, "Done", AlarmIntents.donePending(context, spec))
-            .addAction(0, "10 min", AlarmIntents.snoozePending(context, spec, SnoozeOption.TEN_MINUTES.minutes))
-            .addAction(0, "1 h", AlarmIntents.snoozePending(context, spec, SnoozeOption.ONE_HOUR.minutes))
+            .addAction(0, "10 min", AlarmIntents.snoozePending(context, spec, 10))
+            .addAction(0, "1 h", AlarmIntents.snoozePending(context, spec, 60))
             .build()
         NotificationManagerCompat.from(context).notify(spec.code, n)
         return true

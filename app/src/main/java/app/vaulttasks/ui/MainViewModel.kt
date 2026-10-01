@@ -9,6 +9,7 @@ import app.vaulttasks.data.VaultRepository
 import app.vaulttasks.data.alarms.DiagEntry
 import app.vaulttasks.data.alarms.DiagnosticsLog
 import app.vaulttasks.data.alarms.HealthReport
+import app.vaulttasks.data.alarms.LeadStore
 import app.vaulttasks.data.alarms.ReminderHealth
 import app.vaulttasks.data.settings.SettingsStore
 import app.vaulttasks.domain.Space
@@ -27,12 +28,14 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.util.UUID
 
@@ -46,7 +49,7 @@ sealed interface Screen {
 /** What the create/edit sheet is doing. [Edit] holds the snapshot the user opened; the write protocol detects staleness. */
 sealed interface Editor {
     data object Create : Editor
-    data class Edit(val task: Task) : Editor
+    data class Edit(val task: Task, val leadMinutes: Int = 0) : Editor
 }
 
 data class UiMessage(val text: String, val actionLabel: String? = null, val onAction: (() -> Unit)? = null)
@@ -76,6 +79,7 @@ class MainViewModel(
     private val settings: SettingsStore,
     private val healthCheck: ReminderHealth,
     private val diagnosticsLog: DiagnosticsLog,
+    private val leadStore: LeadStore,
 ) : ViewModel() {
 
     private data class Local(
@@ -88,7 +92,15 @@ class MainViewModel(
 
     private val local = MutableStateFlow(Local())
 
-    val uiState: StateFlow<UiState> = combine(repo.state, local, settings.reminders) { s, l, reminders ->
+    /** Emits at every minute boundary so time-based grouping (overdue by time) updates while the screen is open. */
+    private val minuteTicker = flow {
+        while (true) {
+            emit(LocalDateTime.now())
+            delay(60_000 - System.currentTimeMillis() % 60_000 + 20)
+        }
+    }
+
+    val uiState: StateFlow<UiState> = combine(repo.state, local, settings.reminders, minuteTicker) { s, l, reminders, now ->
         val active = s.spaces.active
         val tasks = active?.files.orEmpty().flatMap { s.files[it]?.tasks.orEmpty() }
         // A space editor for a space that no longer exists falls back to the list.
@@ -101,7 +113,7 @@ class MainViewModel(
             error = s.error,
             spaces = s.spaces.spaces,
             activeSpace = active,
-            groups = TaskGrouping.group(tasks, LocalDate.now(), active?.files.orEmpty()),
+            groups = TaskGrouping.group(tasks, now, active?.files.orEmpty()),
             vaultFiles = s.vaultFiles,
             screen = screen,
             editor = l.editor,
@@ -167,10 +179,6 @@ class MainViewModel(
         viewModelScope.launch { settings.setDefaultReminderTime(time) }
     }
 
-    fun setReminderLeadMinutes(minutes: Int) {
-        viewModelScope.launch { settings.setReminderLeadMinutes(minutes) }
-    }
-
     /**
      * Notification tap: waits for the first scan, switches to a space that shows the task's file, and opens its edit
      * sheet. If the task is gone (edited or completed meanwhile) it says so instead of opening nothing.
@@ -187,7 +195,7 @@ class MainViewModel(
                 return@launch
             }
             if (space.id != st.spaces.active?.id) repo.updateSpaces { it.setActive(space.id) }
-            local.update { it.copy(screen = Screen.Tasks, editor = Editor.Edit(task), saving = false) }
+            local.update { it.copy(screen = Screen.Tasks, editor = editorFor(task), saving = false) }
         }
     }
 
@@ -229,12 +237,14 @@ class MainViewModel(
         local.update { it.copy(editor = Editor.Create) }
     }
 
-    fun openEdit(task: Task) = local.update { it.copy(editor = Editor.Edit(task)) }
+    fun openEdit(task: Task) = local.update { it.copy(editor = editorFor(task)) }
+
+    private fun editorFor(task: Task) = Editor.Edit(task, leadStore.get(task.id.path, task.description))
 
     fun closeEditor() = local.update { it.copy(editor = null, saving = false) }
 
     /** Saves the open sheet. Guarded against double taps: a second call while one is running is ignored. */
-    fun saveEditor(fields: TaskFields, targetPath: String) {
+    fun saveEditor(fields: TaskFields, targetPath: String, leadMinutes: Int) {
         val ed = local.value.editor ?: return
         if (local.value.saving) return
         local.update { it.copy(saving = true) }
@@ -245,7 +255,13 @@ class MainViewModel(
                     if (targetPath == ed.task.id.path) repo.update(ed.task, fields) else repo.move(ed.task, fields, targetPath)
             }
             when (outcome) {
-                is EditOutcome.Done, is EditOutcome.Removed -> closeEditor()
+                is EditOutcome.Done, is EditOutcome.Removed -> {
+                    // "Remind me before" needs a due date to mean anything.
+                    val lead = if (fields.dueDate == null) 0 else leadMinutes
+                    val old = (ed as? Editor.Edit)?.task
+                    leadStore.replace(old?.id?.path, old?.description, targetPath, fields.description, lead)
+                    closeEditor()
+                }
                 EditOutcome.Stale -> {
                     closeEditor()
                     say("Task changed on disk — please retry")
