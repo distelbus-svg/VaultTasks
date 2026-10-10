@@ -1,0 +1,34 @@
+name: VaultTasks
+options:
+  deploymentTarget:
+    macOS: "27.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "4"
+packages:
+  VaultTasksCore:
+    path: VaultTasksCore
+targets:
+  VaultTasks:
+    type: application
+    platform: macOS
+    sources: [VaultTasks]
+    dependencies:
+      - package: VaultTasksCore
+    settings:
+      base:
+        PRODUCT_NAME: VaultTasks
+        PRODUCT_BUNDLE_IDENTIFIER: app.vaulttasks.mac
+        CODE_SIGN_ENTITLEMENTS: VaultTasks/VaultTasks.entitlements
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: NO
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: VaultTasks
+        ASSETCATALOG_COMPILER_APPICON_NAME: VaultTask
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity

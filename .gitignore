@@ -5,3 +5,6 @@ build/
 local.properties
 *.zip
 .DS_Store
+
+# macOS: throwaway Phase 0 spike app (kept locally, not part of the repo)
+macos/Phase0/
