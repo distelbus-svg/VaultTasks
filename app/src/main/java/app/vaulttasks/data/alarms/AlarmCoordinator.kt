@@ -1,5 +1,6 @@
 package app.vaulttasks.data.alarms
 
+import android.content.Context
 import app.vaulttasks.data.RepoState
 import app.vaulttasks.data.VaultRepository
 import app.vaulttasks.data.settings.SettingsStore
@@ -33,6 +34,7 @@ import java.time.LocalDateTime
  * is still empty must never cancel the alarms that are already set.
  */
 class AlarmCoordinator(
+    private val context: Context,
     private val repo: VaultRepository,
     private val settings: SettingsStore,
     private val leadStore: LeadStore,
@@ -87,6 +89,7 @@ class AlarmCoordinator(
             val desired = AlarmPlanner.plan(tasksWithSpace(snap), cfg, now) { leads[AlarmPlanner.leadKey(it.id.path, it.description)] ?: 0 }
             val report = syncer.sync(desired, snap.unreadable.toSet(), now, force)
             pruneLeads(snap, leads)
+            dismissStaleNotifications(snap, cfg)
             if (trigger != null) {
                 diagnostics.record(
                     DiagEntry(
@@ -97,6 +100,17 @@ class AlarmCoordinator(
             }
             report
         }
+    }
+
+    /**
+     * A reminder that is still in the shade must go as soon as its task stops being an open dated task, whoever completed
+     * it (in-app checkbox, Obsidian via sync, delete, edit). Skipped while a file is unreadable: its tasks are missing from
+     * the picture, which must never dismiss anything.
+     */
+    private fun dismissStaleNotifications(snap: Snapshot, cfg: ReminderSettings) {
+        if (snap.unreadable.isNotEmpty()) return
+        val everything = AlarmPlanner.plan(tasksWithSpace(snap), cfg, LocalDateTime.MIN) // all open dated tasks, past ones too
+        runCatching { Notifications.cancelStale(context, everything.mapTo(HashSet()) { it.code }) }
     }
 
     /** Lead entries of tasks that no longer exist in any readable file. Only entries seen in [leads] are candidates. */

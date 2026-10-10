@@ -31,12 +31,14 @@ data class ParsedLine(
         tokens.lastOrNull { it.kind == SigKind.PRIORITY }?.let { t -> Priority.entries.firstOrNull { it.emoji == t.value } }
     val isRecurring: Boolean get() = tokens.any { it.kind == SigKind.RECURRENCE }
 
+    val recurrenceRule: String? get() = tokens.lastOrNull { it.kind == SigKind.RECURRENCE }?.value?.trim()
+
     fun render(): String =
         indent + bullet + gap1 + "[" + mark + "]" + gap2 + headText + (timeRaw ?: "") +
             tokens.joinToString("") { it.sep + it.raw }
 
-    fun toTask(id: TaskId, lineIndex: Int) =
-        Task(id, lineIndex, state, description, dueDate, time, priority, isRecurring, doneDate, rawLine)
+    fun toTask(id: TaskId, lineIndex: Int, notes: String = "") =
+        Task(id, lineIndex, state, description, dueDate, time, priority, isRecurring, doneDate, rawLine, notes, recurrenceRule)
 }
 
 object TaskParser {
@@ -149,7 +151,7 @@ object TaskParser {
             val p = parseLine(l.text, globalFilter) ?: return@forEachIndexed
             val norm = normalize(l.text)
             val occurrence = seen.merge(norm, 1, Int::plus)!! - 1
-            out += p.toTask(TaskId(path, norm, occurrence), i)
+            out += p.toTask(TaskId(path, norm, occurrence), i, Notes.parse(text.lines, i))
         }
         return out
     }

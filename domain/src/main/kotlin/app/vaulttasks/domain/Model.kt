@@ -23,4 +23,16 @@ data class Task(
     val isRecurring: Boolean,
     val doneDate: LocalDate?,
     val rawLine: String,
-)
+    /** Sub-bullet lines under the task, joined with '\n' (see [Notes]); "" if none. Not part of the identity. */
+    val notes: String = "",
+    /** Rule text after 🔁 (e.g. "every week"), null if not recurring. */
+    val recurrence: String? = null,
+) {
+    /** Trailing `#tag` of the description, if any; the app's "category" (a plain Obsidian tag, so Tasks queries can use it). */
+    val category: String? get() = Categories.split(description).second
+
+    /** Whether the checkbox can be toggled in the app: recurring tasks only if their rule is one we can advance. */
+    val completable: Boolean
+        get() = state != TaskState.CANCELLED &&
+            (!isRecurring || state == TaskState.DONE || (dueDate != null && Recurrences.parse(recurrence.orEmpty()) != null))
+}

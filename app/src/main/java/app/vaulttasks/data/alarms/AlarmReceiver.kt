@@ -7,22 +7,16 @@ import app.vaulttasks.AppContainer
 import app.vaulttasks.VaultTasksApp
 import app.vaulttasks.data.EditOutcome
 import app.vaulttasks.domain.Task
-import app.vaulttasks.domain.TaskFields
 import app.vaulttasks.domain.TaskState
-import app.vaulttasks.domain.alarms.AlarmPlanner
 import app.vaulttasks.domain.alarms.AlarmSpec
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
-import java.time.LocalDateTime
 import java.time.ZoneId
 
 /**
  * Spec §8.1/§8.4. The notification is posted straight from the spec carried in the intent: no vault access, no UI
- * process. Done and Snooze run under goAsync() (the system allows roughly 10 s; we cap at 8-9 s and report failure
+ * process. Done runs under goAsync() (the system allows roughly 10 s; we cap at 8-9 s and report failure
  * on the notification itself instead of failing silently).
- *
- * Snooze moves the task's due time in the vault file to now + N minutes. The alarm then follows from the file like
- * any other, so there is no second, hidden kind of reminder to keep in sync.
  */
 class AlarmReceiver : BroadcastReceiver() {
 
@@ -39,24 +33,10 @@ class AlarmReceiver : BroadcastReceiver() {
                 val result = mutateTask(container, spec) { task ->
                     when {
                         task.state == TaskState.DONE -> EditOutcome.Done
-                        task.isRecurring -> EditOutcome.Failed("recurring task, complete it in Obsidian")
                         else -> container.vault.setDone(task, true)
                     }
                 }
                 finish(context, container, spec, result, "complete")
-            }
-            AlarmIntents.ACTION_SNOOZE -> async(container) {
-                Notifications.cancel(context, spec.code)
-                val minutes = intent.getLongExtra(AlarmIntents.EXTRA_SNOOZE_MINUTES, 10)
-                val target = AlarmPlanner.snoozeTarget(LocalDateTime.now(), minutes)
-                val result = mutateTask(container, spec) { task ->
-                    container.vault.update(task, TaskFields(task.description, target.toLocalDate(), target.toLocalTime()))
-                }
-                if (result is EditOutcome.Done) {
-                    // The reminder is a "remind me before" offset from the old due time; after a snooze the new due time IS the reminder.
-                    container.leads.clear(spec.id.path, spec.title)
-                }
-                finish(context, container, spec, result, "snooze")
             }
         }
     }

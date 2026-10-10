@@ -11,6 +11,10 @@ import app.vaulttasks.data.alarms.Notifications
 import app.vaulttasks.data.alarms.PrefsAlarmStore
 import app.vaulttasks.data.alarms.ReminderHealth
 import app.vaulttasks.data.settings.SettingsStore
+import app.vaulttasks.data.sync.PrefsSyncRecords
+import app.vaulttasks.data.sync.SyncRepository
+import app.vaulttasks.data.sync.SyncScheduler
+import app.vaulttasks.data.sync.WebDavSettings
 import app.vaulttasks.domain.alarms.AlarmSyncer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,10 +27,12 @@ class AppContainer(context: Context) {
 
     val settings = SettingsStore(context)
     val vault = VaultRepository(context, settings)
+    val sync = SyncRepository(vault, WebDavSettings(context), PrefsSyncRecords(context), appScope)
     val diagnostics = DiagnosticsLog(context)
     val health = ReminderHealth(context)
     val leads = LeadStore(context)
     val alarms = AlarmCoordinator(
+        context = context.applicationContext,
         repo = vault,
         settings = settings,
         leadStore = leads,
@@ -38,6 +44,7 @@ class AppContainer(context: Context) {
     init {
         Notifications.ensureChannel(context)
         alarms.start()
+        SyncScheduler.scheduleDaily(context.applicationContext)
     }
 }
 

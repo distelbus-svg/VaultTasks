@@ -1,14 +1,67 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Geometry is VaulTasksV2.svg: its 4096 px artboard is mapped to 94.5 of the 108 dp canvas (centered), so the
+     launcher mask shows the artwork at the size of the V2 design. Groups carry the SVG's own coordinates. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#00000000"
-        android:pathData="M32,56 L47,71 L77,39"
-        android:strokeColor="#FFFFFF"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:strokeWidth="9" />
+    <group
+        android:scaleX="0.20479"
+        android:scaleY="0.20479"
+        android:translateX="-98.47"
+        android:translateY="-97.53">
+        <path android:fillColor="#7C3AED" android:pathData="M632,670 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0" />
+        <path android:fillColor="#7C3AED" android:pathData="M632,740 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M632,810 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0"
+            android:strokeColor="#C9B8F5"
+            android:strokeWidth="7" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M644.779,671.779 L651,678 L663.906,663.48 M644.779,741.779 L651,748 L663.906,733.48"
+            android:strokeColor="#F5F1FF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="7" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M696,670 L856,670"
+            android:strokeColor="#B9A6E8"
+            android:strokeLineCap="round"
+            android:strokeWidth="10" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M696,740 L801.8,740"
+            android:strokeColor="#B9A6E8"
+            android:strokeLineCap="round"
+            android:strokeWidth="11.09" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M696,810 L744,810"
+            android:strokeColor="#D8C9F0"
+            android:strokeLineCap="round"
+            android:strokeWidth="12.83" />
+    </group>
+    <group
+        android:scaleX="1.74887"
+        android:scaleY="1.74887"
+        android:translateX="47.19"
+        android:translateY="41.06">
+        <path android:pathData="M19.355,18.538C19.999,17.569 20.619,16.584 21.213,15.584C21.376,15.3 21.352,14.943 21.151,14.684C20.635,13.999 19.647,12.609 19.109,11.322C18.556,10.001 18.473,7.947 18.469,6.945C18.47,6.565 18.344,6.195 18.111,5.895L14.913,1.831C14.901,2.014 14.876,2.195 14.837,2.374C14.731,2.877 14.53,3.378 14.301,3.874C14.167,4.164 14.011,4.474 13.855,4.788L13.545,5.414C13.029,6.482 12.548,7.641 12.413,9.004C12.289,10.264 12.459,11.734 13.228,13.485C13.356,13.496 13.485,13.51 13.614,13.529C14.846,13.695 16.002,14.218 16.94,15.034C17.856,15.824 18.684,16.956 19.355,18.534L19.355,18.538ZM8.199,22.569C8.272,22.581 8.345,22.589 8.419,22.589C9.199,22.613 10.514,22.681 11.579,22.879C12.449,23.039 14.172,23.519 15.589,23.934C16.672,24.25 17.787,23.386 17.944,22.27C18.058,21.456 18.274,20.535 18.669,19.69L18.659,19.695C17.989,17.825 17.137,16.617 16.243,15.846C15.46,15.164 14.494,14.727 13.465,14.589C11.925,14.373 10.513,14.779 9.625,15.039C10.157,17.257 9.993,19.868 8.2,22.57L8.199,22.569ZM5.533,9.938C5.51,10.038 5.477,10.135 5.435,10.228L2.82,16.059C2.552,16.657 2.676,17.361 3.133,17.831L7.249,22.071C9.352,18.97 9.045,16.051 8.085,13.771C7.357,12.041 6.253,10.69 5.535,9.94L5.533,9.938ZM9.32,14.01C9.935,13.827 10.926,13.545 12.065,13.476C11.382,11.751 11.217,10.243 11.349,8.899C11.503,7.347 12.049,6.052 12.584,4.949C12.697,4.714 12.807,4.495 12.912,4.285C13.061,3.988 13.2,3.708 13.331,3.425C13.548,2.955 13.71,2.54 13.791,2.155C13.871,1.775 13.871,1.435 13.777,1.112C13.682,0.787 13.48,0.437 13.097,0.052C12.577,-0.084 12.021,0.052 11.622,0.412L6.672,4.864C6.396,5.112 6.214,5.449 6.159,5.816L5.732,8.646C6.404,9.236 8.06,10.962 9.067,13.357C9.157,13.567 9.242,13.787 9.32,14.01Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:endX="19.766"
+                    android:endY="23.164"
+                    android:startX="-1.0276"
+                    android:startY="0.3866"
+                    android:type="linear">
+                    <item android:color="#FFFFFF" android:offset="0" />
+                    <item android:color="#CEAFFF" android:offset="1" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
 </vector>

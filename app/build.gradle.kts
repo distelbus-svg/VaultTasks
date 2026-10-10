@@ -13,8 +13,8 @@ android {
         applicationId = "app.vaulttasks"
         minSdk = 31
         targetSdk = 37
-        versionCode = 6
-        versionName = "0.4.2"
+        versionCode = 10
+        versionName = "0.6.1"
     }
 
     buildFeatures { compose = true }
@@ -44,4 +44,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    implementation("androidx.work:work-runtime:2.12.0")
+    implementation("sh.calvin.reorderable:reorderable:3.0.0")
 }

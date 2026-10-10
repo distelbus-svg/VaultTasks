@@ -19,8 +19,7 @@ import java.time.LocalTime
 object AlarmIntents {
     const val ACTION_FIRE = "app.vaulttasks.action.FIRE"
     const val ACTION_DONE = "app.vaulttasks.action.DONE"
-    const val ACTION_SNOOZE = "app.vaulttasks.action.SNOOZE"
-    const val EXTRA_SNOOZE_MINUTES = "snooze_minutes"
+    const val EXTRA_TOMORROW = "move_to_tomorrow"
 
     private const val X_CODE = "code"
     private const val X_PATH = "path"
@@ -82,22 +81,30 @@ object AlarmIntents {
         context, s.code, put(base(context, ACTION_DONE, "done", s.code), s), IMMUTABLE_UPDATE,
     )
 
-    fun snoozePending(context: Context, s: AlarmSpec, minutes: Long): PendingIntent = PendingIntent.getBroadcast(
-        context,
-        s.code,
-        put(base(context, ACTION_SNOOZE, "snooze/$minutes", s.code), s).putExtra(EXTRA_SNOOZE_MINUTES, minutes),
-        IMMUTABLE_UPDATE,
-    )
-
     /** Tapping the notification: opens the task's edit sheet. */
-    fun openPending(context: Context, s: AlarmSpec): PendingIntent {
+    fun openPending(context: Context, s: AlarmSpec): PendingIntent = openPending(context, s, tomorrow = false)
+
+    /** The "Move to tomorrow" action: opens the edit sheet with the date already set to tomorrow (nothing is written until Save). */
+    fun tomorrowPending(context: Context, s: AlarmSpec): PendingIntent = openPending(context, s, tomorrow = true)
+
+    private fun openPending(context: Context, s: AlarmSpec, tomorrow: Boolean): PendingIntent {
         val open = Intent(context, app.vaulttasks.ui.MainActivity::class.java)
             .setAction(Intent.ACTION_VIEW)
-            .setData(Uri.parse("vaulttasks://open/${s.code}"))
+            .setData(Uri.parse(if (tomorrow) "vaulttasks://tomorrow/${s.code}" else "vaulttasks://open/${s.code}"))
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra(X_CODE, s.code)
             .putExtra(X_PATH, s.id.path)
             .putExtra(X_TEXT, s.id.normalizedText)
             .putExtra(X_OCC, s.id.occurrence)
+            .putExtra(EXTRA_TOMORROW, tomorrow)
         return PendingIntent.getActivity(context, s.code, open, IMMUTABLE_UPDATE)
     }
+
+    fun readOpenRequest(intent: Intent): OpenRequest? {
+        val id = readId(intent) ?: return null
+        return OpenRequest(id, intent.getBooleanExtra(EXTRA_TOMORROW, false), intent.getIntExtra(X_CODE, 0))
+    }
 }
+
+/** A notification tap or action asking the UI to open a task. [tomorrow]: preset the date to tomorrow. */
+data class OpenRequest(val id: TaskId, val tomorrow: Boolean, val code: Int)

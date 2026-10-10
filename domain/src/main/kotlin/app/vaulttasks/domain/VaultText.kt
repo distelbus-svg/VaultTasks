@@ -17,6 +17,25 @@ class VaultText private constructor(val bom: Boolean, val lines: List<Line>) {
     fun removeLine(index: Int) =
         VaultText(bom, lines.toMutableList().also { it.removeAt(index) })
 
+    /** Replaces [count] (>= 1) lines starting at [index] by [texts]; the last new line keeps the terminator of the last replaced one. */
+    fun replaceLines(index: Int, count: Int, texts: List<String>): VaultText {
+        require(count >= 1 && index + count <= lines.size)
+        val ls = lines.toMutableList()
+        val tailEol = ls[index + count - 1].eol
+        repeat(count) { ls.removeAt(index) }
+        texts.forEachIndexed { k, t -> ls.add(index + k, Line(t, if (k == texts.lastIndex) tailEol else eolStyle)) }
+        return VaultText(bom, ls)
+    }
+
+    fun removeLines(index: Int, count: Int): VaultText =
+        VaultText(bom, lines.toMutableList().also { repeat(count) { _ -> it.removeAt(index) } })
+
+    /** Undo support for multi-line removals. */
+    fun insertLines(index: Int, texts: List<String>): VaultText =
+        texts.foldIndexed(this) { k, acc, t -> acc.insertLine(index + k, t) }
+
+    fun appendLines(texts: List<String>): VaultText = texts.fold(this) { acc, t -> acc.appendLine(t) }
+
     /** Undo support: insert at [index]; past the end it behaves like [appendLine]. */
     fun insertLine(index: Int, text: String): VaultText {
         if (index >= lines.size) return appendLine(text)

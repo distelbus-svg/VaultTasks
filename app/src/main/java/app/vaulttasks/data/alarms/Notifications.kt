@@ -35,6 +35,23 @@ object Notifications {
 
     fun cancel(context: Context, id: Int) = NotificationManagerCompat.from(context).cancel(id)
 
+    /**
+     * Wallpaper-matched (Material You) tint for the small icon. The system accent palette is what dynamic color is built
+     * from, so this follows the wallpaper like the app itself; light shade because the shade drawer is light-on-dark safe.
+     */
+    private fun accent(context: Context): Int = context.getColor(android.R.color.system_accent1_600)
+
+    /**
+     * Removes posted reminders whose task is no longer open and dated (completed in the app or in Obsidian, deleted,
+     * or edited so that its identity changed). [liveCodes] are the alarm codes of all open dated tasks.
+     */
+    fun cancelStale(context: Context, liveCodes: Set<Int>) {
+        val nm = context.getSystemService(NotificationManager::class.java)
+        nm.activeNotifications
+            .filter { it.notification.channelId == CHANNEL_ID && it.id !in liveCodes }
+            .forEach { nm.cancel(it.id) }
+    }
+
     /** Returns false if it could not be posted (permission missing), so the diagnostics log can say so. */
     @SuppressLint("MissingPermission") // checked via permissionGranted
     fun showReminder(context: Context, spec: AlarmSpec): Boolean {
@@ -46,6 +63,7 @@ object Notifications {
         val text = listOfNotNull(due, spec.spaceName.takeIf { it.isNotEmpty() }).joinToString(" · ")
         val n = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_task)
+            .setColor(accent(context))
             .setContentTitle(spec.title)
             .setContentText(text)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
@@ -53,8 +71,7 @@ object Notifications {
             .setAutoCancel(true)
             .setContentIntent(AlarmIntents.openPending(context, spec))
             .addAction(0, "Done", AlarmIntents.donePending(context, spec))
-            .addAction(0, "10 min", AlarmIntents.snoozePending(context, spec, 10))
-            .addAction(0, "1 h", AlarmIntents.snoozePending(context, spec, 60))
+            .addAction(0, "Move to tomorrow", AlarmIntents.tomorrowPending(context, spec))
             .build()
         NotificationManagerCompat.from(context).notify(spec.code, n)
         return true
@@ -67,6 +84,7 @@ object Notifications {
         ensureChannel(context)
         val n = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_task)
+            .setColor(accent(context))
             .setContentTitle(spec.title)
             .setContentText(message)
             .setAutoCancel(true)

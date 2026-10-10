@@ -1,8 +1,11 @@
 package app.vaulttasks.domain.vault
 
+import app.vaulttasks.domain.Notes
 import app.vaulttasks.domain.ParsedLine
+import app.vaulttasks.domain.Recurrences
 import app.vaulttasks.domain.Task
 import app.vaulttasks.domain.TaskFields
+import app.vaulttasks.domain.TaskState
 import app.vaulttasks.domain.TaskParser
 import app.vaulttasks.domain.TaskSerializer
 import app.vaulttasks.domain.VaultText
@@ -13,7 +16,7 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 /** What a delete removed, enough to undo it (spec §7.1). */
-data class RemovedLine(val path: String, val index: Int, val text: String, val fileHashAfter: String)
+data class RemovedLine(val path: String, val index: Int, val text: String, val fileHashAfter: String, val notes: List<String> = emptyList())
 
 sealed interface WriteResult {
     /** [file] is the verified, re-parsed state after the write. */
@@ -44,25 +47,50 @@ class VaultWriter(
     fun setDone(task: Task, done: Boolean, doneDate: LocalDate?): WriteResult =
         mutate(task.id.path) { text, fresh ->
             val (index, line) = locate(text, fresh, task) ?: return@mutate null
-            Edit(text.replaceLine(index, TaskSerializer.setDone(line, done, doneDate)))
+            if (done && line.isRecurring && line.state == TaskState.OPEN) {
+                // Like Tasks: mark this one done and put the next occurrence (with copies of the notes) right below it.
+                val rule = line.recurrenceRule.orEmpty()
+                val rec = Recurrences.parse(rule) ?: throw IllegalStateException("unsupported repeat rule \"$rule\", complete it in Obsidian")
+                val due = line.dueDate ?: throw IllegalStateException("recurring task without a due date, complete it in Obsidian")
+                val next = Recurrences.next(rec, due, doneDate ?: LocalDate.now())
+                val (doneLine, nextLine) = TaskSerializer.complete(line, doneDate, next)
+                val count = 1 + Notes.blockLength(text.lines, index)
+                val noteLines = text.lines.subList(index + 1, index + count).map { it.text }
+                Edit(text.replaceLines(index, count, listOf(doneLine) + noteLines + listOf(nextLine) + noteLines))
+            } else {
+                Edit(text.replaceLine(index, TaskSerializer.setDone(line, done, doneDate)))
+            }
         }
+
+    /** The note lines to write under an edited task: the old ones untouched unless the notes really change. */
+    private fun notesFor(task: Task, fields: TaskFields, newLine: String, old: List<String>): List<String> =
+        if (fields.notes != null && Notes.normalize(fields.notes) != Notes.normalize(task.notes)) Notes.render(newLine, fields.notes) else old
 
     fun update(task: Task, fields: TaskFields): WriteResult =
         mutate(task.id.path) { text, fresh ->
             val (index, line) = locate(text, fresh, task) ?: return@mutate null
-            Edit(text.replaceLine(index, TaskSerializer.applyFields(line, fields, globalFilter())))
+            val newLine = TaskSerializer.applyFields(line, fields, globalFilter())
+            val count = 1 + Notes.blockLength(text.lines, index)
+            val oldNotes = text.lines.subList(index + 1, index + count).map { it.text }
+            val notes = notesFor(task, fields, newLine, oldNotes)
+            Edit(text.replaceLines(index, count, listOf(newLine) + notes))
         }
 
     fun delete(task: Task): WriteResult =
         mutate(task.id.path) { text, fresh ->
             val (index, _) = locate(text, fresh, task) ?: return@mutate null
-            Edit(text.removeLine(index), removedIndex = index, removedText = text.lines[index].text)
+            val count = 1 + Notes.blockLength(text.lines, index)
+            Edit(
+                text.removeLines(index, count), removedIndex = index, removedText = text.lines[index].text,
+                removedNotes = text.lines.subList(index + 1, index + count).map { it.text },
+            )
         }
 
     /** Appends at the end of an existing file, ensuring a preceding newline. */
     fun create(path: String, fields: TaskFields, bullet: String = "-"): WriteResult =
         mutate(path) { text, _ ->
-            Edit(text.appendLine(TaskSerializer.newLine(fields, globalFilter(), bullet)))
+            val line = TaskSerializer.newLine(fields, globalFilter(), bullet)
+            Edit(text.appendLines(listOf(line) + Notes.render(line, fields.notes.orEmpty())))
         }
 
     /**
@@ -81,15 +109,20 @@ class VaultWriter(
         return l1.withLock {
             l2.withLock {
                 var newText: String? = null
+                var movedNotes: List<String> = emptyList()
                 val removal = mutate(fromPath) { text, fresh ->
                     val (index, line) = locate(text, fresh, task) ?: return@mutate null
-                    newText = TaskSerializer.applyFields(line, fields, globalFilter())
-                    Edit(text.removeLine(index), removedIndex = index, removedText = text.lines[index].text)
+                    val newLine = TaskSerializer.applyFields(line, fields, globalFilter())
+                    newText = newLine
+                    val count = 1 + Notes.blockLength(text.lines, index)
+                    val old = text.lines.subList(index + 1, index + count).map { it.text }
+                    movedNotes = notesFor(task, fields, newLine, old)
+                    Edit(text.removeLines(index, count), removedIndex = index, removedText = text.lines[index].text, removedNotes = old)
                 }
                 if (removal !is WriteResult.Ok) return@withLock removal
                 val removed = removal.removed ?: return@withLock WriteResult.Failed(IllegalStateException("no removal recorded"))
 
-                val added = mutate(toPath) { text, _ -> Edit(text.appendLine(newText!!)) }
+                val added = mutate(toPath) { text, _ -> Edit(text.appendLines(listOf(newText!!) + movedNotes)) }
                 if (added is WriteResult.Ok) return@withLock added
 
                 when (val back = restore(removed)) {
@@ -106,12 +139,18 @@ class VaultWriter(
     fun restore(removed: RemovedLine): WriteResult =
         mutate(removed.path) { text, _ ->
             val unchanged = sha256Hex(text.toString().toByteArray(Charsets.UTF_8)) == removed.fileHashAfter
-            Edit(if (unchanged) text.insertLine(removed.index, removed.text) else text.appendLine(removed.text))
+            val all = listOf(removed.text) + removed.notes
+            Edit(if (unchanged) text.insertLines(removed.index, all) else text.appendLines(all))
         }
 
     // ---- internals -------------------------------------------------------------------------------------------
 
-    private class Edit(val text: VaultText, val removedIndex: Int? = null, val removedText: String? = null)
+    private class Edit(
+        val text: VaultText,
+        val removedIndex: Int? = null,
+        val removedText: String? = null,
+        val removedNotes: List<String> = emptyList(),
+    )
 
     /** The target's current line index and parse, or null if its identity no longer matches anything in the file. */
     private fun locate(text: VaultText, fresh: List<Task>, target: Task): Pair<Int, ParsedLine>? {
@@ -159,7 +198,7 @@ class VaultWriter(
         val hash = sha256Hex(newBytes)
         val parsed = TaskParser.parseFile(path, result.text, filter)
         val removed = if (result.removedIndex != null && result.removedText != null) {
-            RemovedLine(path, result.removedIndex, result.removedText, hash)
+            RemovedLine(path, result.removedIndex, result.removedText, hash, result.removedNotes)
         } else null
         return WriteResult.Ok(ScannedFile(FileState(path, info.lastModified, info.size, hash), parsed), removed)
     }

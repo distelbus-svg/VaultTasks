@@ -1,5 +1,6 @@
 package app.vaulttasks.ui.reminders
 
+import app.vaulttasks.ui.components.BackButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -61,7 +62,7 @@ fun RemindersScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Reminders") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("←", style = MaterialTheme.typography.titleLarge) } },
+                navigationIcon = { BackButton(onBack) },
                 actions = { TextButton(onClick = onRefresh) { Text("Re-check") } },
             )
         },

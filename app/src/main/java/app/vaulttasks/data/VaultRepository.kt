@@ -9,9 +9,11 @@ import app.vaulttasks.data.vault.SafVaultFileSystem
 import app.vaulttasks.domain.SpacesData
 import app.vaulttasks.domain.Task
 import app.vaulttasks.domain.TaskFields
+import app.vaulttasks.domain.sync.LocalFiles
 import app.vaulttasks.domain.vault.FileScanner
 import app.vaulttasks.domain.vault.RemovedLine
 import app.vaulttasks.domain.vault.ScannedFile
+import app.vaulttasks.domain.vault.VaultFileSystem
 import app.vaulttasks.domain.vault.VaultWriter
 import app.vaulttasks.domain.vault.WriteResult
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -66,28 +69,46 @@ class VaultRepository(
     val state: StateFlow<RepoState> = _state.asStateFlow()
 
     private val opMutex = Mutex()
+    private var fs: SafVaultFileSystem? = null
     private var scanner: FileScanner? = null
     private var writer: VaultWriter? = null
     private var globalFilter: String = ""
 
     private var loaded = false
-
+    private val cache = VaultCache(context)
+    private var vaultUriString: String? = null
     /**
      * Loads spaces and the vault once per process. Safe to call from the UI and from receivers: the second caller
      * waits for the first and returns without rescanning (foreground/refresh rescans go through [rescan]).
      */
-    suspend fun ensureLoaded() = opMutex.withLock {
-        if (loaded) return@withLock
-        loaded = true
-        globalFilter = settings.globalFilter.first()
-        val spaces = SpacesJson.decode(settings.spacesJson.first())
-        _state.update { it.copy(spaces = spaces) }
-        val stored = settings.vaultUri.first()
-        if (stored == null) {
-            reset(RepoState.Status.NO_VAULT)
-        } else if (attach(Uri.parse(stored))) {
-            scanLocked(force = true)
+    suspend fun ensureLoaded() {
+        val needsScan = opMutex.withLock {
+            if (loaded) return@withLock false
+            loaded = true
+            globalFilter = settings.globalFilter.first()
+            val spaces = SpacesJson.decode(settings.spacesJson.first())
+            _state.update { it.copy(spaces = spaces) }
+            val stored = settings.vaultUri.first()
+            if (stored == null) {
+                reset(RepoState.Status.NO_VAULT)
+                false
+            } else if (attach(Uri.parse(stored))) {
+                vaultUriString = stored
+                // Show what the last run knew right away; the scan below only re-reads files that changed.
+                val cached = withContext(Dispatchers.IO) { cache.load(stored, globalFilter) }
+                if (cached != null) {
+                    val scope = _state.value.spaces.assignedFiles
+                    _state.update {
+                        it.copy(files = cached.files.filterKeys { p -> p in scope }, vaultFiles = cached.available, scanning = true)
+                    }
+                }
+                true
+            } else {
+                false
+            }
         }
+        // Outside the lock, so edits are not blocked while the vault is being listed.
+        if (needsScan) rescan(force = false)
     }
 
     suspend fun setVault(uri: Uri) = opMutex.withLock {
@@ -96,6 +117,7 @@ class VaultRepository(
             Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
         )
         settings.setVaultUri(uri.toString())
+        vaultUriString = uri.toString()
         if (attach(uri)) scanLocked(force = true)
     }
 
@@ -126,6 +148,18 @@ class VaultRepository(
     suspend fun move(task: Task, fields: TaskFields, toPath: String): EditOutcome =
         write(rescanAfter = true) { it.move(task, fields, toPath) }
 
+    /**
+     * File access for sync: every block runs under [opMutex], so it cannot interleave with a task edit or a scan.
+     * Call from a worker thread (it blocks while waiting for the lock). null if no vault is attached.
+     */
+    fun localFiles(): LocalFiles? {
+        val files = fs ?: return null
+        return object : LocalFiles {
+            override fun <T> atomically(block: (VaultFileSystem) -> T): T =
+                runBlocking { opMutex.withLock { block(files) } }
+        }
+    }
+
     suspend fun delete(task: Task): EditOutcome = write { it.delete(task) }
 
     suspend fun restore(removed: RemovedLine): EditOutcome = write { it.restore(removed) }
@@ -139,6 +173,7 @@ class VaultRepository(
             when (val r = withContext(Dispatchers.IO) { block(w) }) {
                 is WriteResult.Ok -> {
                     _state.update { it.copy(files = it.files + (r.file.state.path to r.file)) }
+                    persistCache()
                     if (rescanAfter) scanLocked(force = false)
                     r.removed?.let { EditOutcome.Removed(it) } ?: EditOutcome.Done
                 }
@@ -165,13 +200,15 @@ class VaultRepository(
         if (!granted) {
             scanner = null
             writer = null
+            fs = null
             reset(RepoState.Status.PERMISSION_LOST)
             return false
         }
-        val fs = SafVaultFileSystem(resolver, uri)
-        scanner = FileScanner(fs) { globalFilter }
-        writer = VaultWriter(fs) { globalFilter }
-        val name = withContext(Dispatchers.IO) { fs.rootName() }
+        val safFs = SafVaultFileSystem(resolver, uri)
+        fs = safFs
+        scanner = FileScanner(safFs) { globalFilter }
+        writer = VaultWriter(safFs) { globalFilter }
+        val name = withContext(Dispatchers.IO) { safFs.rootName() }
         reset(RepoState.Status.READY, name)
         return true
     }
@@ -190,12 +227,21 @@ class VaultRepository(
                     scanning = false, scanComplete = true,
                 )
             }
+            persistCache()
         } catch (e: SecurityException) {
             scanner = null
             writer = null
+            fs = null
             reset(RepoState.Status.PERMISSION_LOST)
         } catch (e: Exception) {
             _state.update { it.copy(scanning = false, error = e.message ?: e.javaClass.simpleName) }
         }
+    }
+
+    /** Saves the current scan result for the next start (call with [opMutex] held). */
+    private suspend fun persistCache() {
+        val uri = vaultUriString ?: return
+        val s = _state.value
+        withContext(Dispatchers.IO) { cache.save(uri, globalFilter, s.files, s.vaultFiles, s.vaultName) }
     }
 }

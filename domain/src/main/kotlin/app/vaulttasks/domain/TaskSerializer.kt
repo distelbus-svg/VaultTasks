@@ -3,8 +3,19 @@ package app.vaulttasks.domain
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
-data class TaskFields(val description: String, val dueDate: LocalDate?, val dueTime: LocalTime?)
+/**
+ * [notes] == null leaves the task's notes untouched; [recurrence] == Keep leaves its 🔁 rule untouched. Callers that
+ * only change date/time (e.g. "move to tomorrow") therefore never lose either.
+ */
+data class TaskFields(
+    val description: String,
+    val dueDate: LocalDate?,
+    val dueTime: LocalTime?,
+    val notes: String? = null,
+    val recurrence: RecurrenceEdit = RecurrenceEdit.Keep,
+)
 
 /**
  * All edits return the new text of ONE line. Untouched parts keep their original bytes.
@@ -27,18 +38,24 @@ object TaskSerializer {
             time == line.time -> line.timeRaw ?: timeRaw(time) // legacy position → rewritten into the description
             else -> timeRaw(time)
         }
-        val tokens = if (date == null) {
+        var tokens = if (date == null) {
             setToken(line.tokens, SigKind.DUE, null, null)
         } else {
             setToken(line.tokens, SigKind.DUE, "📅 $date", date.toString())
         }
+        tokens = when (val r = f.recurrence) {
+            RecurrenceEdit.Keep -> tokens
+            RecurrenceEdit.Clear -> setToken(tokens, SigKind.RECURRENCE, null, null)
+            is RecurrenceEdit.Set ->
+                if (date == null) setToken(tokens, SigKind.RECURRENCE, null, null) // a repeat needs a date to repeat from
+                else setToken(tokens, SigKind.RECURRENCE, "🔁 ${r.rule}", r.rule)
+        }
         return line.copy(headText = head, timeRaw = tRaw, tokens = tokens).render()
     }
 
-    /** Only open⇄done. Recurring and cancelled tasks are refused (UI disables them). */
+    /** open⇄done. Cancelled tasks are refused. A recurring task is completed with [complete] instead (needs two lines). */
     fun setDone(line: ParsedLine, done: Boolean, doneDate: LocalDate?): String {
         check(line.state != TaskState.CANCELLED) { "cancelled tasks are not toggled" }
-        check(!line.isRecurring) { "recurring tasks are completed in Obsidian" }
         val mark = if (!done) ' ' else if (line.state == TaskState.DONE) line.mark else 'x'
         val tokens = when {
             !done -> setToken(line.tokens, SigKind.DONE, null, null)
@@ -50,6 +67,25 @@ object TaskSerializer {
         return line.copy(mark = mark, timeRaw = tRaw, tokens = tokens).render()
     }
 
+    /**
+     * Completing an open recurring task, like Tasks does: the line is marked done and a fresh open copy with the next
+     * due date follows it. Returns (done line, next occurrence). Start and scheduled dates move by the same distance.
+     */
+    fun complete(line: ParsedLine, doneDate: LocalDate?, nextDue: LocalDate): Pair<String, String> {
+        val doneLine = setDone(line, true, doneDate)
+        val shift = line.dueDate?.let { ChronoUnit.DAYS.between(it, nextDue) } ?: 0L
+        var tokens = setToken(line.tokens, SigKind.DONE, null, null)
+        tokens = setToken(tokens, SigKind.DUE, "📅 $nextDue", nextDue.toString())
+        tokens = tokens.map { t ->
+            if (t.kind != SigKind.START && t.kind != SigKind.SCHEDULED) return@map t
+            val d = TaskParser.parseDate(t.value) ?: return@map t
+            val moved = d.plusDays(shift)
+            t.copy(raw = t.raw.replace(t.value, moved.toString()), value = moved.toString())
+        }
+        val tRaw = line.timeRaw ?: line.time?.let { timeRaw(it) }
+        return doneLine to line.copy(mark = ' ', timeRaw = tRaw, tokens = tokens).render()
+    }
+
     fun newLine(f: TaskFields, globalFilter: String = "", bullet: String = "-"): String {
         val desc = f.description.trim()
         require(desc.isNotEmpty()) { "description required" }
@@ -58,6 +94,7 @@ object TaskSerializer {
         val date = f.dueDate
         if (date != null) {
             f.dueTime?.let { sb.append(timeRaw(it)) }
+            (f.recurrence as? RecurrenceEdit.Set)?.let { sb.append(" 🔁 ").append(it.rule) }
             sb.append(" 📅 ").append(date)
         }
         return sb.toString()
